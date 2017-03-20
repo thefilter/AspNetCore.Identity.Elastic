@@ -12,11 +12,9 @@ using Nest;
 namespace AspNetCore.Identity.Elastic
 {
     /// <summary>
-    /// The default implementation of <see cref="ElasticUserStore{TUser}"/> where <see cref="TUser"/> is <see cref="ElasticIdentityUser{TKey}"/> and TKey is a string.
+    /// The default implementation of <see cref="ElasticUserStore"/> where TUser is <see cref="ElasticIdentityUser{TKey}"/> and TKey is a string.
     /// </summary>
-    /// <typeparam name="TUser"></typeparam>
-    public class ElasticUserStore<TUser> : ElasticUserStore<string, TUser>
-        where TUser : ElasticIdentityUser
+    public class ElasticUserStore : ElasticUserStore<string, ElasticIdentityUser>
     {
         public ElasticUserStore(IElasticClient elasticClient) : base(elasticClient)
         {
@@ -26,7 +24,12 @@ namespace AspNetCore.Identity.Elastic
         {
         }
 
-        public override async Task<TUser> FindByNameAsync(string normalizedUserName, CancellationToken cancellationToken)
+        public override Task SetUserNameAsync(ElasticIdentityUser user, string userName, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("Changing user name is not supported.");
+        }
+
+        public override async Task<ElasticIdentityUser> FindByNameAsync(string normalizedUserName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -123,21 +126,40 @@ namespace AspNetCore.Identity.Elastic
 
             foreach (var claim in claims)
             {
-                user.Claims.Add(new ElasticIdentityUserClaim<TKey>(claim));
+                var userClaim = user.Claims.FirstOrDefault(c => c.Type == claim.Type);
+                if (userClaim != null)
+                {
+                    userClaim.Value = claim.Value;
+                }
+                else
+                {
+                    user.Claims.Add(new ElasticIdentityUserClaim(claim));
+                }
             }
-
 
             return Task.CompletedTask;
         }
 
         public Task AddLoginAsync(TUser user, UserLoginInfo login, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (user == null)
+            {
+                throw new ArgumentNullException(nameof(user));
+            }
+
+            if (login == null)
+            {
+                throw new ArgumentNullException(nameof(login));
+            }
+
             if (user.Logins.Any(l => l.Equals(login)))
             {
                 throw new InvalidOperationException($"A login for this provider ({login.ProviderDisplayName}) already exists.");
             }
 
-            user.Logins.Add(ElasticIdentityUserLogin<TKey>.FromUserLoginInfo(login));
+            user.Logins.Add(ElasticIdentityUserLogin.FromUserLoginInfo(login));
 
             throw new NotImplementedException();
         }
@@ -415,9 +437,42 @@ namespace AspNetCore.Identity.Elastic
             return Task.FromResult(user.UserName);
         }
 
-        public Task<IList<TUser>> GetUsersForClaimAsync(Claim claim, CancellationToken cancellationToken)
+        public async Task<IList<TUser>> GetUsersForClaimAsync(Claim claim, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (claim == null)
+            {
+                throw new ArgumentNullException(nameof(claim));
+            }
+
+            var elasticClaim = new ElasticIdentityUserClaim(claim);
+
+            var sd = new SearchDescriptor<TUser>()
+                .Version()
+                .Query(q => q
+                    .Bool(b => b
+                        .Must(
+                            bm => bm.Term(u => u.Claims.Suffix("Type"), claim.Type),
+                            bm => bm.Term(u => u.Claims.Suffix("Values"), claim.Value),
+                            bm => bm.Term(u => u.DateDeleted, null)
+                        )
+                    )
+                );
+
+            var result = await ELASTIC_CLIENT.SearchAsync<TUser>(sd, cancellationToken).ConfigureAwait(false);
+
+            return result.Hits
+                .Where(h => h.Source != null)
+                .Select(u =>
+                {
+                    var user = u.Source;
+                    user.Version = u.Version;
+                    return user;
+                })
+                // assuming that claims is not nested
+                .Where(u => u.Claims.Contains(elasticClaim))
+                .ToList();
         }
 
         public Task<bool> HasPasswordAsync(TUser user, CancellationToken cancellationToken)
@@ -448,17 +503,63 @@ namespace AspNetCore.Identity.Elastic
 
         public Task RemoveClaimsAsync(TUser user, IEnumerable<Claim> claims, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (user == null)
+            {
+                throw new ArgumentNullException(nameof(user));
+            }
+
+            if (claims == null)
+            {
+                throw new ArgumentNullException(nameof(claims));
+            }
+
+            var elasticClaims = claims.Select(claim => new ElasticIdentityUserClaim(claim));
+
+            foreach (var claim in elasticClaims)
+            {
+                user.Claims.Remove(claim);
+            }
+    
+            return Task.CompletedTask;
         }
 
         public Task RemoveLoginAsync(TUser user, string loginProvider, string providerKey, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (user == null)
+            {
+                throw new ArgumentNullException(nameof(user));
+            }
+
+            if (loginProvider == null)
+            {
+                throw new ArgumentNullException(nameof(loginProvider));
+            }
+
+            if (providerKey == null)
+            {
+                throw new ArgumentNullException(nameof(providerKey));
+            }
+
+            var login = user.Logins.FirstOrDefault(l => l.LoginProvider == providerKey && l.LoginProvider == loginProvider);
+
+            if (login != null)
+            {
+                user.Logins.Remove(login);
+            }
+
+            return Task.CompletedTask;
         }
 
         public Task ReplaceClaimAsync(TUser user, Claim claim, Claim newClaim, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            var elasticClaim = new ElasticIdentityUserClaim(claim);
+            user.Claims.Remove(elasticClaim);
+            user.Claims.Add(new ElasticIdentityUserClaim(newClaim));
+            return Task.CompletedTask;
         }
 
         public Task ResetAccessFailedCountAsync(TUser user, CancellationToken cancellationToken)
@@ -603,10 +704,19 @@ namespace AspNetCore.Identity.Elastic
 
         public Task SetTwoFactorEnabledAsync(TUser user, bool enabled, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (user == null)
+            {
+                throw new ArgumentNullException(nameof(user));
+            }
+
+            user.IsTwoFactorEnabled = enabled;
+
+            return Task.CompletedTask;
         }
 
-        public Task SetUserNameAsync(TUser user, string userName, CancellationToken cancellationToken)
+        public virtual Task SetUserNameAsync(TUser user, string userName, CancellationToken cancellationToken)
         {
             throw new NotImplementedException();
         }
@@ -637,12 +747,45 @@ namespace AspNetCore.Identity.Elastic
 
         public Task AddToRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (user == null)
+            {
+                throw new ArgumentNullException(nameof(user));
+            }
+
+            if (roleName == null)
+            {
+                throw new ArgumentNullException(nameof(roleName));
+            }
+
+            if (IsInRoleAsync(user, roleName, cancellationToken).Result)
+            {
+                return Task.CompletedTask;
+            }
+
+            var role = new ElasticIdentityUserRole(roleName);
+            user.Roles.Add(role);
+            return Task.CompletedTask;
         }
 
         public Task RemoveFromRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (user == null)
+            {
+                throw new ArgumentNullException(nameof(user));
+            }
+
+            if (roleName == null)
+            {
+                throw new ArgumentNullException(nameof(roleName));
+            }
+
+            var role = new ElasticIdentityUserRole(roleName);
+            user.Roles.Remove(role);
+            return Task.CompletedTask;
         }
 
         public Task<IList<string>> GetRolesAsync(TUser user, CancellationToken cancellationToken)
@@ -661,12 +804,50 @@ namespace AspNetCore.Identity.Elastic
 
         public Task<bool> IsInRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (user == null)
+            {
+                throw new ArgumentNullException(nameof(user));
+            }
+
+            if (roleName == null)
+            {
+                throw new ArgumentNullException(nameof(roleName));
+            }
+
+            return Task.FromResult(user.Roles.Contains(new ElasticIdentityUserRole(roleName)));
         }
 
-        public Task<IList<TUser>> GetUsersInRoleAsync(string roleName, CancellationToken cancellationToken)
+        public async Task<IList<TUser>> GetUsersInRoleAsync(string roleName, CancellationToken cancellationToken)
         {
-            throw new NotImplementedException();
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (roleName == null)
+            {
+                throw new ArgumentNullException(nameof(roleName));
+            }
+
+            var sd = new SearchDescriptor<TUser>()
+                .Version()
+                .Query(q => q
+                    .Bool(b => b
+                        .Must(
+                            bm => bm.Term(u => u.Roles, roleName),
+                            bm => bm.Term(u => u.DateDeleted, null)
+                        )
+                    )
+                );
+
+            var result = await ELASTIC_CLIENT.SearchAsync<TUser>(sd, cancellationToken).ConfigureAwait(false);
+
+            return result.Hits.Where(h => h.Source != null).Select(u =>
+                {
+                    var user = u.Source;
+                    user.Version = u.Version;
+                    return user;
+                })
+                .ToList();
         }
 
         public Task SetPhoneNumberAsync(TUser user, string phoneNumber, CancellationToken cancellationToken)

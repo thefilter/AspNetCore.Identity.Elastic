@@ -28,9 +28,6 @@
     <DotNetCliToolReference Include="Microsoft.VisualStudio.Web.CodeGeneration.Tools" Version="1.0.0" />
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="Views\Users\" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\..\src\AspNetCore.Identity.Elastic\AspNetCore.Identity.Elastic.csproj" />
   </ItemGroup>
 

@@ -16,7 +16,7 @@ namespace AspNetCore.Identity.Elastic
     }
 
     public class ElasticIdentityUser<TKey> :
-        ElasticIdentityUser<TKey, ElasticIdentityUserClaim<TKey>, ElasticIdentityUserRole<TKey>, ElasticIdentityUserLogin<TKey>>
+        ElasticIdentityUser<TKey, ElasticIdentityUserClaim, ElasticIdentityUserRole, ElasticIdentityUserLogin>
         where TKey : IEquatable<TKey>
     {
     }

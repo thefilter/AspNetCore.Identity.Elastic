@@ -12,7 +12,7 @@ namespace AspNetCore.Identity.Elastic.Extensions
 
         public static void AddToServices(this IServiceCollection services, IElasticClient elasticClient)
         {
-            services.AddSingleton<IUserStore<ElasticIdentityUser>>(provider => new ElasticUserStore<ElasticIdentityUser>(elasticClient));
+            services.AddSingleton<IUserStore<ElasticIdentityUser>>(provider => new ElasticUserStore(elasticClient));
             services.TryAddSingleton<IdentityMarkerService>();
             services.TryAddSingleton<IUserValidator<ElasticIdentityUser>, UserValidator<ElasticIdentityUser>>();
             services.TryAddSingleton<IPasswordValidator<ElasticIdentityUser>, PasswordValidator<ElasticIdentityUser>>();

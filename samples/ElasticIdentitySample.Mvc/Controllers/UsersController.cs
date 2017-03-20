@@ -1,4 +1,6 @@
 using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
 using AspNetCore.Identity.Elastic;
 using ElasticIdentitySample.Mvc.Services;
 using Microsoft.AspNetCore.Identity;
@@ -74,15 +76,17 @@ namespace ElasticIdentitySample.Mvc.Controllers
         }
 
         // GET: Users/Edit/5
-        public ActionResult Edit(string id)
+        public async Task<ActionResult> Edit(string id)
         {
-            return View();
+            var user = await _userManager.FindByIdAsync(id);
+
+            return View(user);
         }
 
         // POST: Users/Edit/5
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult Edit(string id, IFormCollection collection)
+        public async Task<ActionResult> Edit(string id, IFormCollection collection)
         {
             try
             {
@@ -91,9 +95,24 @@ namespace ElasticIdentitySample.Mvc.Controllers
                     return new BadRequestResult();
                 }
 
-                var user = _userManager.FindByIdAsync(id).ConfigureAwait(false).GetAwaiter().GetResult();
+                var user = await _userManager.FindByIdAsync(id);
 
-                return View();
+                var claimTypes = collection["Claim.Type"];
+                var claimValues = collection["Claim.Value"];
+
+                var claims = claimTypes
+                    .Select((value, i) => new Claim(value, claimValues[i]))
+                 //   .GroupBy(c => c.Type)
+                    .ToList();
+                var roles = collection["Roles"].ToList();
+
+                await _userManager.AddClaimsAsync(user, claims);
+                user = await _userManager.FindByIdAsync(id);
+                await _userManager.AddToRolesAsync(user, roles);
+
+                user = await _userManager.FindByIdAsync(id);
+
+                return View(user);
             }
             catch
             {

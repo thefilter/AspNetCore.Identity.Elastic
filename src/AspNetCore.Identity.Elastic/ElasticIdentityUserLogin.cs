@@ -3,15 +3,7 @@ using Microsoft.AspNetCore.Identity;
 
 namespace AspNetCore.Identity.Elastic
 {
-    public class ElasticIdentityUserLogin : ElasticIdentityUserLogin<string>
-    {
-        public ElasticIdentityUserLogin(string loginProvider, string providerKey, string displayName) : base(loginProvider, providerKey, displayName)
-        {
-        }
-    }
-
-    public class ElasticIdentityUserLogin<TKey>: IEquatable<ElasticIdentityUserLogin<TKey>>, IEquatable<UserLoginInfo>
-        where TKey : IEquatable<TKey>
+    public class ElasticIdentityUserLogin: IEquatable<ElasticIdentityUserLogin>, IEquatable<UserLoginInfo>
     {
         public ElasticIdentityUserLogin(string loginProvider, string providerKey, string displayName)
         {
@@ -31,7 +23,7 @@ namespace AspNetCore.Identity.Elastic
 
         public string LoginProvider { get; set; }
 
-        public bool Equals(ElasticIdentityUserLogin<TKey> other)
+        public bool Equals(ElasticIdentityUserLogin other)
         {
             return other.LoginProvider.Equals(LoginProvider)
                 && other.ProviderKey.Equals(ProviderKey);
@@ -43,9 +35,9 @@ namespace AspNetCore.Identity.Elastic
                 && other.ProviderKey.Equals(ProviderKey);
         }
 
-        public static ElasticIdentityUserLogin<TKey> FromUserLoginInfo(UserLoginInfo userLoginInfo)
+        public static ElasticIdentityUserLogin FromUserLoginInfo(UserLoginInfo userLoginInfo)
         {
-            return new ElasticIdentityUserLogin<TKey>(userLoginInfo.LoginProvider, userLoginInfo.ProviderKey, userLoginInfo.ProviderDisplayName);
+            return new ElasticIdentityUserLogin(userLoginInfo.LoginProvider, userLoginInfo.ProviderKey, userLoginInfo.ProviderDisplayName);
         }
     }
 }

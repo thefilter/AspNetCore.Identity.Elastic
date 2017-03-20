@@ -49,10 +49,10 @@
                 </ul>
             </td>
             <td>
-                <ul>
+                <ul class="list-unstyled">
                     @foreach (var claim in user.Claims)
                     {
-                        <li>@claim.ClaimType: @claim.ClaimValue</li>
+                        <li>@claim.Type: @claim.Value</li>
                     }
                 </ul>
             </td>

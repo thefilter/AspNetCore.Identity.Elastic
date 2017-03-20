@@ -8,16 +8,8 @@
 
 <form asp-action="Edit">
     <div class="form-horizontal">
-        <h4>ElasticIdentityUser</h4>
         <hr />
         <div asp-validation-summary="ModelOnly" class="text-danger"></div>
-        <div class="form-group">
-            <label asp-for="Id" class="col-md-2 control-label"></label>
-            <div class="col-md-10">
-                <input asp-for="Id" class="form-control" />
-                <span asp-validation-for="Id" class="text-danger"></span>
-            </div>
-        </div>
         <div class="form-group">
             <label asp-for="UserName" class="col-md-2 control-label"></label>
             <div class="col-md-10">
@@ -26,24 +18,10 @@
             </div>
         </div>
         <div class="form-group">
-            <label asp-for="NormalizedUserName" class="col-md-2 control-label"></label>
-            <div class="col-md-10">
-                <input asp-for="NormalizedUserName" class="form-control" />
-                <span asp-validation-for="NormalizedUserName" class="text-danger"></span>
-            </div>
-        </div>
-        <div class="form-group">
             <label asp-for="Email" class="col-md-2 control-label"></label>
             <div class="col-md-10">
                 <input asp-for="Email" class="form-control" />
                 <span asp-validation-for="Email" class="text-danger"></span>
-            </div>
-        </div>
-        <div class="form-group">
-            <label asp-for="NormalizedEmail" class="col-md-2 control-label"></label>
-            <div class="col-md-10">
-                <input asp-for="NormalizedEmail" class="form-control" />
-                <span asp-validation-for="NormalizedEmail" class="text-danger"></span>
             </div>
         </div>
         <div class="form-group">
@@ -78,20 +56,6 @@
             </div>
         </div>
         <div class="form-group">
-            <label asp-for="PasswordHash" class="col-md-2 control-label"></label>
-            <div class="col-md-10">
-                <input asp-for="PasswordHash" class="form-control" />
-                <span asp-validation-for="PasswordHash" class="text-danger"></span>
-            </div>
-        </div>
-        <div class="form-group">
-            <label asp-for="SecurityStamp" class="col-md-2 control-label"></label>
-            <div class="col-md-10">
-                <input asp-for="SecurityStamp" class="form-control" />
-                <span asp-validation-for="SecurityStamp" class="text-danger"></span>
-            </div>
-        </div>
-        <div class="form-group">
             <label asp-for="AccessFailedCount" class="col-md-2 control-label"></label>
             <div class="col-md-10">
                 <input asp-for="AccessFailedCount" class="form-control" />
@@ -101,29 +65,25 @@
         <div class="form-group">
             <label asp-for="DateCreated" class="col-md-2 control-label"></label>
             <div class="col-md-10">
-                <input asp-for="DateCreated" class="form-control" />
-                <span asp-validation-for="DateCreated" class="text-danger"></span>
+                <span asp-for="DateCreated" class="checkbox">@Model.DateCreated</span>
             </div>
         </div>
         <div class="form-group">
             <label asp-for="DateDeleted" class="col-md-2 control-label"></label>
             <div class="col-md-10">
-                <input asp-for="DateDeleted" class="form-control" />
-                <span asp-validation-for="DateDeleted" class="text-danger"></span>
+                <span asp-for="DateDeleted" class="checkbox">@(Model.DateDeleted ?? null)</span>
             </div>
         </div>
         <div class="form-group">
             <label asp-for="LastLoginDate" class="col-md-2 control-label"></label>
             <div class="col-md-10">
-                <input asp-for="LastLoginDate" class="form-control" />
-                <span asp-validation-for="LastLoginDate" class="text-danger"></span>
+                <span asp-for="LastLoginDate" class="checkbox">@(Model.LastLoginDate ?? null)</span>
             </div>
         </div>
         <div class="form-group">
             <label asp-for="LockoutEndDate" class="col-md-2 control-label"></label>
             <div class="col-md-10">
-                <input asp-for="LockoutEndDate" class="form-control" />
-                <span asp-validation-for="LockoutEndDate" class="text-danger"></span>
+                <span asp-for="LockoutEndDate" class="checkbox">@(Model.LockoutEndDate ?? null)</span>
             </div>
         </div>
         <div class="form-group">
@@ -132,6 +92,43 @@
                     <input asp-for="IsTwoFactorEnabled" />
                     <label asp-for="IsTwoFactorEnabled"></label>
                 </div>
+            </div>
+        </div>
+        <div class="form-group">
+            <label asp-for="Roles" class="col-md-2 control-label"></label>
+            <div class="col-md-10" id="rolesForm">
+                <hr />
+                @foreach (var userRole in Model.Roles)
+                {
+                    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                    <div>
+                        <input asp-for="@userRole.RoleId" name="Roles" class="form-control"/>
+                        <span asp-validation-for="@userRole.RoleId" class="text-danger"></span>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="col-md-offset-2 col-md-10">
+                <input id="btnAddRole" class="btn btn-default" value="Add Role" />
+            </div>
+        </div>
+        <div class="form-group">
+            <label asp-for="Claims" class="col-md-2 control-label"></label>
+            <div class="col-md-10" id="claimsForm">
+                <hr />
+                @foreach (var claim in Model.Claims)
+                {
+                    <div>
+                        <input asp-for="@claim.Type" name="Claim.Type" />:
+                        <input asp-for="@claim.Value" name="Claim.Value"/>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="col-md-offset-2 col-md-10">
+                <input id="btnAddClaim" class="btn btn-default" value="Add Claim" />
             </div>
         </div>
         <div class="form-group">
@@ -146,3 +143,24 @@
     <a asp-action="Index">Back to List</a>
 </div>
 
+@section Scripts {
+    <script type="text/javascript">
+
+        $(document).ready(function () {
+            var $fields = $('#rolesForm');
+            $('#btnAddRole').click(function (e) {
+                e.preventDefault();
+                $('<div><input name="Roles" class="form-control" /></div>').appendTo($fields);
+            });
+        });
+
+        $(document).ready(function () {
+            var $fields = $('#claimsForm');
+            $('#btnAddClaim').click(function (e) {
+                e.preventDefault();
+                $('<div><input asp-for="claim.Type" name="Claim.Type" />:&nbsp;<input asp-for="claim.Value" name="Claim.Value"/></div>').appendTo($fields);
+            });
+        });
+
+    </script>
+}

@@ -1,15 +1,15 @@
-﻿using System;
-using Nest;
+﻿using Nest;
 
 namespace AspNetCore.Identity.Elastic
 {
-    public class ElasticIdentityUserRole : ElasticIdentityUserRole<string>
+    public class ElasticIdentityUserRole
     {
-    }
+        public ElasticIdentityUserRole(string roleId)
+        {
+            RoleId = roleId;
+        }
 
-    public class ElasticIdentityUserRole<TKey> where TKey : IEquatable<TKey>
-    {
         [Keyword]
-        public TKey RoleId { get; set; }
+        public string RoleId { get; set; }
     }
 }

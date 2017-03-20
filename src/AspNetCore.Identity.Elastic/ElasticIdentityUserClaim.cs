@@ -3,21 +3,7 @@ using System.Security.Claims;
 
 namespace AspNetCore.Identity.Elastic
 {
-    public class ElasticIdentityUserClaim : ElasticIdentityUserClaim<string>
-    {
-        public ElasticIdentityUserClaim(Claim claim)
-        {
-            if (claim == null)
-            {
-                throw new ArgumentNullException(nameof(claim));
-            }
-
-            ClaimType = claim.Type;
-            ClaimValue = claim.Value;
-        }
-    }
-
-    public class ElasticIdentityUserClaim<TKey> where TKey : IEquatable<TKey>
+    public class ElasticIdentityUserClaim
     {
         public ElasticIdentityUserClaim()
         {
@@ -30,31 +16,23 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(claim));
             }
 
-            ClaimType = claim.Type;
-            ClaimValue = claim.Value;
+            Type = claim.Type;
+            Value = claim.Value;
         }
 
         public ElasticIdentityUserClaim(string claimType, string claimValue)
         {
-            ClaimType = claimType ?? throw new ArgumentNullException(nameof(claimType));
-            ClaimValue = claimValue ?? throw new ArgumentNullException(nameof(claimValue));
+            Type = claimType ?? throw new ArgumentNullException(nameof(claimType));
+            Value = claimValue ?? throw new ArgumentNullException(nameof(claimValue));
         }
 
-        public int Id { get; set; }
+        public string Type { get; set; }
 
-        public string ClaimType { get; set; }
-
-        public string ClaimValue { get; set; }
+        public string Value { get; set; }
 
         public Claim ToClaim()
         {
-            return new Claim(ClaimType, ClaimValue);
-        }
-
-        public void InitializeFromClaim(Claim claim)
-        {
-            ClaimType = claim.Type;
-            ClaimValue = claim.Value;
+            return new Claim(Type, Value);
         }
     }
 }
