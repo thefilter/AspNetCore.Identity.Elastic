@@ -1,0 +1,75 @@
+@model IEnumerable<AspNetCore.Identity.Elastic.ElasticIdentityUser>
+
+
+@{
+    ViewData["Title"] = "Index";
+}
+
+<h2>Users</h2>
+<table class="table table-bordered table-striped">
+    <tr>
+        <th>
+            @Html.DisplayNameFor(model => model.UserName)
+        </th>
+        <th>
+            @Html.DisplayNameFor(model => model.Email)
+        </th>
+        <th>
+            @Html.DisplayNameFor(model => model.DateCreated)
+        </th>
+        <th>
+            @Html.DisplayNameFor(model => model.AccessFailedCount)
+        </th>
+        <th>
+            @Html.DisplayNameFor(model => model.Roles)
+        </th>
+        <th>
+            @Html.DisplayNameFor(model => model.Claims)
+        </th>
+        <th>
+            @Html.DisplayNameFor(model => model.Logins)
+        </th>
+        <th>
+            Action
+        </th>
+    </tr>
+    @foreach (var user in Model)
+    {
+        <tr>
+            <td>@user.UserName</td>
+            <td>@user.Email</td>
+            <td>@user.DateCreated</td>
+            <td>@user.AccessFailedCount</td>
+            <td>
+                <ul class="list-unstyled">
+                    @foreach (var role in user.Roles)
+                    {
+                        <li>@role.RoleId</li>
+                    }
+                </ul>
+            </td>
+            <td>
+                <ul>
+                    @foreach (var claim in user.Claims)
+                    {
+                        <li>@claim.ClaimType: @claim.ClaimValue</li>
+                    }
+                </ul>
+            </td>
+            <td>
+                <ul>
+                    @foreach (var login in user.Logins)
+                    {
+                        <li>@login.ProviderDisplayName</li>
+                    }
+                </ul>
+            </td>
+            <td>
+                @Html.ActionLink("Edit", "Edit", new { id = user.Id }) |
+                @Html.ActionLink("Details", "Details", new { id = user.Id }) |
+                @*@Html.ActionLink("Delete", "Delete", new { id = item.Id })*@
+            </td>
+        </tr>
+    }
+</table>
+

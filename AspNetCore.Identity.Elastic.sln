@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.26228.4
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ElasticIdentitySample.Mvc", "samples\ElasticIdentitySample.Mvc\ElasticIdentitySample.Mvc.csproj", "{BB40631B-E386-4546-BD59-7ED2D51EF699}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AspNetCore.Identity.Elastic", "src\AspNetCore.Identity.Elastic\AspNetCore.Identity.Elastic.csproj", "{E2A095A0-268F-4927-8288-DF8AD68A9719}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BB40631B-E386-4546-BD59-7ED2D51EF699}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BB40631B-E386-4546-BD59-7ED2D51EF699}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BB40631B-E386-4546-BD59-7ED2D51EF699}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BB40631B-E386-4546-BD59-7ED2D51EF699}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E2A095A0-268F-4927-8288-DF8AD68A9719}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E2A095A0-268F-4927-8288-DF8AD68A9719}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E2A095A0-268F-4927-8288-DF8AD68A9719}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E2A095A0-268F-4927-8288-DF8AD68A9719}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
