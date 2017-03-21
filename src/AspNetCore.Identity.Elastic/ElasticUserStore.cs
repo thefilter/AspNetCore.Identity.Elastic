@@ -12,7 +12,9 @@ using Nest;
 namespace AspNetCore.Identity.Elastic
 {
     /// <summary>
-    /// The default implementation of <see cref="ElasticUserStore"/> where TUser is <see cref="ElasticIdentityUser{TKey}"/> and TKey is a string.
+    /// The default implementation of <see cref="ElasticUserStore{TKey, TUser}"/> where Tkey is <see cref="string"/> and TUser is <see cref="ElasticIdentityUser"/>.
+    /// <para />
+    /// This implementation uses elastisearch explicit version numbering for concurrency control.
     /// </summary>
     public class ElasticUserStore : ElasticUserStore<string, ElasticIdentityUser>
     {
@@ -24,9 +26,25 @@ namespace AspNetCore.Identity.Elastic
         {
         }
 
-        public override Task SetUserNameAsync(ElasticIdentityUser user, string userName, CancellationToken cancellationToken)
+        public override async Task<IdentityResult> CreateAsync(ElasticIdentityUser user, CancellationToken cancellationToken)
         {
-            throw new NotSupportedException("Changing user name is not supported.");
+            if (user == null)
+            {
+                throw new ArgumentNullException(nameof(user));
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var existingUser = await GetUserById(user.Id, cancellationToken);
+
+            if (existingUser != null)
+            {
+                return IdentityResult.Failed(ERROR_DESCRIBER.DuplicateUserName(user.UserName));
+            }
+
+            var result = await ELASTIC_CLIENT.CreateAsync(user, null, cancellationToken);
+
+            return result.IsValid ? IdentityResult.Success : IdentityResult.Failed();
         }
 
         public override async Task<ElasticIdentityUser> FindByNameAsync(string normalizedUserName, CancellationToken cancellationToken)
@@ -43,6 +61,28 @@ namespace AspNetCore.Identity.Elastic
             var user = await GetUserById(lowerInvariantUserName, cancellationToken);
 
             return user;
+        }
+
+        public override Task SetUserNameAsync(ElasticIdentityUser user, string userName, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("Changing user name is not supported.");
+        }
+
+        public override async Task<IdentityResult> UpdateAsync(ElasticIdentityUser user, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (user == null)
+            {
+                throw new ArgumentNullException(nameof(user));
+            }
+
+            var indexResponse = await ELASTIC_CLIENT
+                .IndexAsync(user, x => x.Version(user.Version ?? 1), cancellationToken);
+
+            return indexResponse.IsValid
+                ? IdentityResult.Success
+                : IdentityResult.Failed(ERROR_DESCRIBER.ConcurrencyFailure());
         }
     }
 
@@ -61,7 +101,7 @@ namespace AspNetCore.Identity.Elastic
         where TUser : ElasticIdentityUser<TKey>
     {
         protected readonly IElasticClient ELASTIC_CLIENT;
-        private readonly IdentityErrorDescriber _errorDescriber = new IdentityErrorDescriber();
+        protected readonly IdentityErrorDescriber ERROR_DESCRIBER = new IdentityErrorDescriber();
         private readonly string _indexName;
 
         public ElasticUserStore(IElasticClient elasticClient)
@@ -80,7 +120,7 @@ namespace AspNetCore.Identity.Elastic
 
             if (string.IsNullOrEmpty(indexName))
             {
-                throw new ArgumentNullException(indexName, "Default index must be specified either through ConnectionSettings.MapDefaultTypeIndices or DefaultIndex");
+                throw new ArgumentNullException(indexName, "Index name must be specified either through ConnectionSettings.MapDefaultTypeIndices or DefaultIndex");
             }
 
             ELASTIC_CLIENT = elasticClient;
@@ -103,7 +143,11 @@ namespace AspNetCore.Identity.Elastic
                 var sd = new SearchDescriptor<TUser>()
                     .Version()
                     .Query(q => q
-                        .Term(u => u.DateDeleted, null)
+                        .Bool(b => b
+                            .MustNot(
+                                bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
+                            )
+                        )
                     );
 
                 return ELASTIC_CLIENT.Search<TUser>(sd).Documents.AsQueryable();
@@ -164,7 +208,7 @@ namespace AspNetCore.Identity.Elastic
             throw new NotImplementedException();
         }
 
-        public async Task<IdentityResult> CreateAsync(TUser user, CancellationToken cancellationToken)
+        public virtual async Task<IdentityResult> CreateAsync(TUser user, CancellationToken cancellationToken)
         {
             if (user == null)
             {
@@ -173,19 +217,9 @@ namespace AspNetCore.Identity.Elastic
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (typeof(TUser) == typeof(ElasticIdentityUser))
-            {
-                var checkedUser = await GetUserById(user.Id.ToString(), cancellationToken);
+            var result = await ELASTIC_CLIENT.CreateAsync(user, null, cancellationToken);
 
-                if (checkedUser != null)
-                {
-                    return IdentityResult.Failed(_errorDescriber.DuplicateUserName(user.UserName));
-                }
-            }
-
-            await ELASTIC_CLIENT.CreateAsync(user, null, cancellationToken);
-
-            return IdentityResult.Success;
+            return  result.IsValid? IdentityResult.Success : IdentityResult.Failed();
         }
 
         public Task<IdentityResult> DeleteAsync(TUser user, CancellationToken cancellationToken)
@@ -238,8 +272,10 @@ namespace AspNetCore.Identity.Elastic
                 .Query(q => q
                     .Bool(b => b
                         .Must(
-                            bm => bm.Term(u => u.NormalizedUserName.Keyword(), lowerInvariantUserName),
-                            bm => bm.Term(u => u.DateDeleted, null)
+                            bm => bm.Term(u => u.NormalizedUserName.Keyword(), lowerInvariantUserName)
+                        )
+                        .MustNot(
+                            bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
                         )
                     )
                 );
@@ -446,17 +482,18 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(claim));
             }
 
-            var elasticClaim = new ElasticIdentityUserClaim(claim);
-
             var sd = new SearchDescriptor<TUser>()
                 .Version()
                 .Query(q => q
                     .Bool(b => b
                         .Must(
-                            bm => bm.Term(u => u.Claims.Suffix("Type"), claim.Type),
-                            bm => bm.Term(u => u.Claims.Suffix("Values"), claim.Value),
-                            bm => bm.Term(u => u.DateDeleted, null)
+                            bm => bm.Term(u => u.Claims.First().Type.Keyword(), claim.Type),
+                            bm => bm.Term(u => u.Claims.First().Value.Keyword(), claim.Value)
                         )
+                        .MustNot(
+                            bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
+                        )
+
                     )
                 );
 
@@ -471,7 +508,7 @@ namespace AspNetCore.Identity.Elastic
                     return user;
                 })
                 // assuming that claims is not nested
-                .Where(u => u.Claims.Contains(elasticClaim))
+                .Where(u => u.Claims.Any(c => c.Type == claim.Type && c.Value == claim.Value))
                 .ToList();
         }
 
@@ -721,7 +758,7 @@ namespace AspNetCore.Identity.Elastic
             throw new NotImplementedException();
         }
 
-        public async Task<IdentityResult> UpdateAsync(TUser user, CancellationToken cancellationToken)
+        public virtual async Task<IdentityResult> UpdateAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -730,19 +767,17 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(user));
             }
 
-            if (string.IsNullOrEmpty(user.Id.ToString()))
+            if (string.IsNullOrEmpty(user.Id?.ToString()))
             {
                 throw new ArgumentNullException(nameof(user.Id),"A null or empty User.Id value is not allowed in UpdateAsync");
             }
 
             var indexResponse = await ELASTIC_CLIENT
-                .IndexAsync(user, x => x
-                    .Version(user.Version ?? 1)
-                    .Refresh(Refresh.True), cancellationToken);
+                .IndexAsync(user, x => x.Refresh(Refresh.True), cancellationToken);
 
             return indexResponse.IsValid 
                 ? IdentityResult.Success 
-                : IdentityResult.Failed(_errorDescriber.ConcurrencyFailure());
+                : IdentityResult.Failed(ERROR_DESCRIBER.ConcurrencyFailure());
         }
 
         public Task AddToRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
@@ -833,8 +868,10 @@ namespace AspNetCore.Identity.Elastic
                 .Query(q => q
                     .Bool(b => b
                         .Must(
-                            bm => bm.Term(u => u.Roles, roleName),
-                            bm => bm.Term(u => u.DateDeleted, null)
+                            bm => bm.Term(u => u.Roles, roleName)
+                        )
+                        .MustNot(
+                            bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
                         )
                     )
                 );
@@ -904,9 +941,7 @@ namespace AspNetCore.Identity.Elastic
 
         protected async Task<TUser> GetUserById(string userId, CancellationToken cancellationToken)
         {
-            var getResponse =
-                await ELASTIC_CLIENT.GetAsync(DocumentPath<TUser>.Id(userId),
-                    cancellationToken: cancellationToken);
+            var getResponse = await ELASTIC_CLIENT.GetAsync(DocumentPath<TUser>.Id(userId), cancellationToken: cancellationToken);
 
             var user = getResponse.Found ? getResponse.Source : null;
 
