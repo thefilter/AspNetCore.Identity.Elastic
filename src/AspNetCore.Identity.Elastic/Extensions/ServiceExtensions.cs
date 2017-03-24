@@ -10,7 +10,7 @@ namespace AspNetCore.Identity.Elastic.Extensions
     {
         private const string DEFAULT_INDEX_NAME = "users";
 
-        public static void AddToServices(this IServiceCollection services, IElasticClient elasticClient)
+        public static void AddElasticIdentity(this IServiceCollection services, IElasticClient elasticClient)
         {
             services.AddSingleton<IUserStore<ElasticIdentityUser>>(provider => new ElasticUserStore(elasticClient));
             services.TryAddSingleton<IdentityMarkerService>();
@@ -25,7 +25,7 @@ namespace AspNetCore.Identity.Elastic.Extensions
             services.TryAddScoped<SignInManager<ElasticIdentityUser>, SignInManager<ElasticIdentityUser>>();
         }
 
-        public static void AddToServices(this IServiceCollection services, string serverName, string indexName = DEFAULT_INDEX_NAME)
+        public static void AddElasticIdentity(this IServiceCollection services, string serverName, string indexName = DEFAULT_INDEX_NAME)
         {
             var node = new Uri("http://" + serverName.Replace("http://", ""));
             var settings = new ConnectionSettings(node);
@@ -33,7 +33,7 @@ namespace AspNetCore.Identity.Elastic.Extensions
                 .Add(typeof(ElasticIdentityUser), indexName));
             var elasticClient = new ElasticClient(settings);
 
-            AddToServices(services, elasticClient);
+            AddElasticIdentity(services, elasticClient);
         }
     }
 }

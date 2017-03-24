@@ -64,6 +64,8 @@ namespace AspNetCore.Identity.Elastic
 
         public DateTimeOffset? LastLoginDate { get; set; } = null;
 
+        public DateTimeOffset? LastPasswordChangedDate { get; set; } = null;
+
         public ICollection<TUserRole> Roles { get; set; } = new List<TUserRole>();
 
         public ICollection<TUserClaim> Claims { get; set; } = new List<TUserClaim>();

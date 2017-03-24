@@ -48,7 +48,7 @@ namespace ElasticIdentitySample.Mvc
                 .Add(typeof(ElasticIdentityUser), "users"));
             var elasticClient = new ElasticClient(settings);
 
-            services.AddToServices(elasticClient);
+            services.AddElasticIdentity(elasticClient);
 
             // Services used by identity
             services.AddAuthentication(options =>
