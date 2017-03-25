@@ -3,7 +3,7 @@ using System.Security.Claims;
 
 namespace AspNetCore.Identity.Elastic
 {
-    public class ElasticIdentityUserClaim
+    public class ElasticIdentityUserClaim: IEquatable<ElasticIdentityUserClaim>, IEquatable<Claim>
     {
         public ElasticIdentityUserClaim()
         {
@@ -22,8 +22,16 @@ namespace AspNetCore.Identity.Elastic
 
         public ElasticIdentityUserClaim(string claimType, string claimValue)
         {
-            Type = claimType ?? throw new ArgumentNullException(nameof(claimType));
-            Value = claimValue ?? throw new ArgumentNullException(nameof(claimValue));
+            if (claimType == null)
+            {
+                throw new ArgumentNullException(nameof(claimType));
+            }
+            if (claimValue == null)
+            {
+                throw new ArgumentNullException(nameof(claimValue));
+            }
+            Type = claimType;
+            Value = claimValue;
         }
 
         public string Type { get; set; }
@@ -33,6 +41,18 @@ namespace AspNetCore.Identity.Elastic
         public Claim ToClaim()
         {
             return new Claim(Type, Value);
+        }
+
+        public bool Equals(ElasticIdentityUserClaim other)
+        {
+            return other.Type.Equals(Type)
+                && other.Value.Equals(Value);
+        }
+
+        public bool Equals(Claim other)
+        {
+            return other.Type.Equals(Type)
+                && other.Value.Equals(Value);
         }
     }
 }

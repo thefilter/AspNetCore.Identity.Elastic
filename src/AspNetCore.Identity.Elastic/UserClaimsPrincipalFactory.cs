@@ -19,8 +19,17 @@ namespace AspNetCore.Identity.Elastic
             UserManager<TUser> userManager,
             IOptions<IdentityOptions> optionsAccessor)
         {
-            UserManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
-            Options = optionsAccessor?.Value ?? throw new ArgumentNullException(nameof(optionsAccessor));
+            if (userManager == null)
+            {
+                throw new ArgumentNullException(nameof(userManager));
+            }
+            if (optionsAccessor == null)
+            {
+                throw new ArgumentNullException(nameof(optionsAccessor));
+            }
+
+            UserManager = userManager;
+            Options = optionsAccessor.Value;
         }
 
         public UserManager<TUser> UserManager { get; }

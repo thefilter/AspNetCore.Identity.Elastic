@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace AspNetCore.Identity.Elastic
 {
@@ -74,7 +75,7 @@ namespace AspNetCore.Identity.Elastic
 
         public DateTimeOffset? LockoutEndDate { get; set; }
 
-        public bool IsTwoFactorEnabled { get; internal set; }
+        public bool IsTwoFactorEnabled { get; set; }
 
         internal long? Version { get; set; }
 
@@ -86,16 +87,6 @@ namespace AspNetCore.Identity.Elastic
         internal void SetEmailConfirmed()
         {
             EmailConfirmed = true;
-        }
-
-        internal virtual void EnableLockout()
-        {
-            IsLockoutEnabled = true;
-        }
-
-        internal virtual void DisableLockout()
-        {
-            IsLockoutEnabled = false;
         }
 
         internal void ResetAccessFailedCount()

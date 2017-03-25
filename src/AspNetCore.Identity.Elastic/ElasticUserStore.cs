@@ -4,7 +4,6 @@ using System.Linq;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
-using AspNetCore.Identity.Elastic.Extensions;
 using Elasticsearch.Net;
 using Microsoft.AspNetCore.Identity;
 using Nest;
@@ -48,7 +47,7 @@ namespace AspNetCore.Identity.Elastic
         }
 
         /// <summary>
-        /// Logically deletes the; <paramref name="user"/> from the user store.
+        /// Logically deletes the <paramref name="user"/> from the user store.
         /// </summary>
         /// <param name="user">The user to delete.</param>
         /// <param name="cancellationToken">The <see cref="CancellationToken"/> used to propagate notifications that the operation should be canceled.</param>
@@ -67,6 +66,7 @@ namespace AspNetCore.Identity.Elastic
             var result = await ELASTIC_CLIENT
                 .UpdateAsync(new DocumentPath<ElasticIdentityUser>(user),
                     d => d
+                        .Doc(user)
                         .Version(user.Version ?? 1)
                         .Refresh(Refresh.True),
                     cancellationToken);
@@ -141,7 +141,8 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(elasticClient));
             }
 
-            elasticClient.ConnectionSettings.DefaultIndices.TryGetValue(typeof(TUser), out string indexName);
+            string indexName;
+            elasticClient.ConnectionSettings.DefaultIndices.TryGetValue(typeof(TUser), out indexName);
 
             if (string.IsNullOrEmpty(indexName))
             {
@@ -186,6 +187,8 @@ namespace AspNetCore.Identity.Elastic
 
         public Task AddClaimsAsync(TUser user, IEnumerable<Claim> claims, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -196,18 +199,11 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(claims));
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-
-            foreach (var claim in claims)
+            foreach (var claim in claims.Select(c => new ElasticIdentityUserClaim(c)))
             {
-                var userClaim = user.Claims.FirstOrDefault(c => c.Type == claim.Type);
-                if (userClaim != null)
-                {
-                    userClaim.Value = claim.Value;
-                }
-                else
-                {
-                    user.Claims.Add(new ElasticIdentityUserClaim(claim));
+                if (!user.Claims.Contains(claim))
+                { 
+                    user.Claims.Add(claim);
                 }
             }
 
@@ -217,7 +213,7 @@ namespace AspNetCore.Identity.Elastic
         public Task AddLoginAsync(TUser user, UserLoginInfo login, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -240,14 +236,14 @@ namespace AspNetCore.Identity.Elastic
 
         public virtual async Task<IdentityResult> CreateAsync(TUser user, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var result = await ELASTIC_CLIENT.CreateAsync(user, null, cancellationToken);
+            var result = await ELASTIC_CLIENT.CreateAsync(user, d => d.Refresh(Refresh.True), cancellationToken);
 
             return  result.IsValid? IdentityResult.Success : IdentityResult.Failed();
         }
@@ -285,6 +281,13 @@ namespace AspNetCore.Identity.Elastic
 
         public async Task<TUser> FindByEmailAsync(string normalizedEmail, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            ThrowIfDisposed();
+            if (normalizedEmail == null)
+            {
+                throw new ArgumentNullException(nameof(normalizedEmail));
+            }
+
             var sd = new SearchDescriptor<TUser>()
                 .Version()
                 .Query(q => q
@@ -292,7 +295,7 @@ namespace AspNetCore.Identity.Elastic
                         .Must(
                             bm => bm.
                                 Term(t => t
-                                    .Field(tf => tf.NormalizedEmail.Keyword())
+                                    .Field(tf => tf.NormalizedEmail.Suffix("keyword"))
                                     .Value(normalizedEmail.ToLowerInvariant())
                                 )
                         )
@@ -323,13 +326,25 @@ namespace AspNetCore.Identity.Elastic
 
         public async Task<TUser> FindByLoginAsync(string loginProvider, string providerKey, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            ThrowIfDisposed();
+            if (loginProvider == null)
+            {
+                throw new ArgumentNullException(nameof(loginProvider));
+            }
+            if (providerKey == null)
+            {
+                throw new ArgumentNullException(nameof(providerKey));
+            }
+
             var sd = new SearchDescriptor<TUser>()
                 .Version()
+                .Size(1)
                 .Query(q => q
                     .Bool(b => b
                         .Must(
-                            bm => bm.Term(u => u.Logins.First().LoginProvider, loginProvider),
-                            bm => bm.Term(u => u.Logins.First().ProviderKey, providerKey)
+                            bm => bm.Term(u => u.Logins.First().LoginProvider.Suffix("keyword"), loginProvider),
+                            bm => bm.Term(u => u.Logins.First().ProviderKey.Suffix("keyword"), providerKey)
                         )
                         .MustNot(
                             bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
@@ -353,14 +368,14 @@ namespace AspNetCore.Identity.Elastic
                     user.Version = u.Version;
                     return user;
                 })
-                // assuming that roles are not nested
+                // assuming that logins are not nested
                 .FirstOrDefault(u => u.Logins.Any(c => c.LoginProvider == loginProvider && c.ProviderKey == providerKey));
         }
 
         public virtual async Task<TUser> FindByNameAsync(string normalizedUserName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (normalizedUserName == null)
             {
                 throw new ArgumentNullException(nameof(normalizedUserName));
@@ -370,10 +385,11 @@ namespace AspNetCore.Identity.Elastic
 
             var sd = new SearchDescriptor<TUser>()
                 .Version()
+                .Size(1)
                 .Query(q => q
                     .Bool(b => b
                         .Must(
-                            bm => bm.Term(u => u.NormalizedUserName.Keyword(), lowerInvariantUserName)
+                            bm => bm.Term(u => u.NormalizedUserName.Suffix("keyword"), lowerInvariantUserName)
                         )
                         .MustNot(
                             bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
@@ -389,7 +405,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<int> GetAccessFailedCountAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -401,13 +417,13 @@ namespace AspNetCore.Identity.Elastic
         public Task<IList<Claim>> GetClaimsAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
             }
 
-            var result = (IList<Claim>)user
+            var result = (IList<Claim>) user
                 .Claims
                 .Select(x => x.ToClaim())
                 .ToList();
@@ -418,7 +434,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<string> GetEmailAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -430,7 +446,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<bool> GetEmailConfirmedAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -447,7 +463,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<bool> GetLockoutEnabledAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -459,7 +475,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<DateTimeOffset?> GetLockoutEndDateAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -473,7 +489,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<IList<UserLoginInfo>> GetLoginsAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -487,7 +503,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<string> GetNormalizedEmailAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -499,7 +515,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<string> GetNormalizedUserNameAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -511,7 +527,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<string> GetPasswordHashAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -523,7 +539,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<string> GetSecurityStampAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -535,7 +551,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<bool> GetTwoFactorEnabledAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -547,7 +563,7 @@ namespace AspNetCore.Identity.Elastic
         public async Task<string> GetUserIdAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -559,7 +575,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<string> GetUserNameAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -571,7 +587,7 @@ namespace AspNetCore.Identity.Elastic
         public async Task<IList<TUser>> GetUsersForClaimAsync(Claim claim, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (claim == null)
             {
                 throw new ArgumentNullException(nameof(claim));
@@ -579,11 +595,12 @@ namespace AspNetCore.Identity.Elastic
 
             var sd = new SearchDescriptor<TUser>()
                 .Version()
+                .Size(10000)
                 .Query(q => q
                     .Bool(b => b
                         .Must(
-                            bm => bm.Term(u => u.Claims.First().Type.Keyword(), claim.Type),
-                            bm => bm.Term(u => u.Claims.First().Value.Keyword(), claim.Value)
+                            bm => bm.Term(u => u.Claims.First().Type.Suffix("keyword"), claim.Type),
+                            bm => bm.Term(u => u.Claims.First().Value.Suffix("keyword"), claim.Value)
                         )
                         .MustNot(
                             bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
@@ -615,7 +632,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<bool> HasPasswordAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -627,7 +644,7 @@ namespace AspNetCore.Identity.Elastic
         public async Task<int> IncrementAccessFailedCountAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -641,7 +658,7 @@ namespace AspNetCore.Identity.Elastic
         public Task RemoveClaimsAsync(TUser user, IEnumerable<Claim> claims, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -665,7 +682,7 @@ namespace AspNetCore.Identity.Elastic
         public Task RemoveLoginAsync(TUser user, string loginProvider, string providerKey, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -702,7 +719,7 @@ namespace AspNetCore.Identity.Elastic
         public Task ResetAccessFailedCountAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -716,12 +733,11 @@ namespace AspNetCore.Identity.Elastic
         public Task SetEmailAsync(TUser user, string email, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
             }
-
             if (email == null)
             {
                 throw new ArgumentNullException(nameof(email));
@@ -735,12 +751,11 @@ namespace AspNetCore.Identity.Elastic
         public Task SetEmailConfirmedAsync(TUser user, bool confirmed, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
             }
-
             if (user.Email == null)
             {
                 throw new InvalidOperationException("User doesn't have an email.");
@@ -761,20 +776,13 @@ namespace AspNetCore.Identity.Elastic
         public Task SetLockoutEnabledAsync(TUser user, bool enabled, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
             }
 
-            if (enabled)
-            {
-                user.EnableLockout();
-            }
-            else
-            {
-                user.DisableLockout();
-            }
+            user.IsLockoutEnabled = enabled;
 
             return Task.CompletedTask;
         }
@@ -782,7 +790,7 @@ namespace AspNetCore.Identity.Elastic
         public Task SetLockoutEndDateAsync(TUser user, DateTimeOffset? lockoutEnd, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -790,7 +798,7 @@ namespace AspNetCore.Identity.Elastic
 
             if (lockoutEnd != null)
             {
-                user.LockUntil(lockoutEnd.Value.UtcDateTime);
+                user.LockUntil(lockoutEnd.Value);
             }
 
             return Task.CompletedTask;
@@ -809,7 +817,7 @@ namespace AspNetCore.Identity.Elastic
         public Task SetPasswordHashAsync(TUser user, string passwordHash, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -824,12 +832,11 @@ namespace AspNetCore.Identity.Elastic
         public Task SetSecurityStampAsync(TUser user, string stamp, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
             }
-
             if (stamp == null)
             {
                 throw new ArgumentNullException(nameof(stamp));
@@ -843,7 +850,7 @@ namespace AspNetCore.Identity.Elastic
         public Task SetTwoFactorEnabledAsync(TUser user, bool enabled, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -876,15 +883,15 @@ namespace AspNetCore.Identity.Elastic
         public virtual async Task<IdentityResult> UpdateAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
             }
-
             if (string.IsNullOrEmpty(user.Id?.ToString()))
             {
-                throw new ArgumentNullException(nameof(user.Id),"A null or empty User.Id value is not allowed in UpdateAsync");
+                throw new ArgumentNullException(nameof(user.Id),
+                    "A null or empty User.Id value is not allowed.");
             }
 
             var indexResponse = await ELASTIC_CLIENT
@@ -895,67 +902,64 @@ namespace AspNetCore.Identity.Elastic
                 : IdentityResult.Failed(ERROR_DESCRIBER.ConcurrencyFailure());
         }
 
-        public Task AddToRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
+        public async Task AddToRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
             }
-
             if (roleName == null)
             {
                 throw new ArgumentNullException(nameof(roleName));
             }
 
-            if (IsInRoleAsync(user, roleName, cancellationToken).Result)
+            if (await IsInRoleAsync(user, roleName, cancellationToken))
             {
-                return Task.CompletedTask;
+                return;
             }
 
             var role = new ElasticIdentityUserRole(roleName);
             user.Roles.Add(role);
-            return Task.CompletedTask;
         }
 
         public Task RemoveFromRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
             }
-
             if (roleName == null)
             {
                 throw new ArgumentNullException(nameof(roleName));
             }
 
-            var role = new ElasticIdentityUserRole(roleName);
-            user.Roles.Remove(role);
+            user.Roles.Remove(new ElasticIdentityUserRole(roleName));
+
             return Task.CompletedTask;
         }
 
         public Task<IList<string>> GetRolesAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
             }
 
-            var result = user.Roles.Select(r => r.RoleId).ToList();
+            var roles = user.Roles.Select(r => r.RoleId).ToList();
 
-            return Task.FromResult((IList<string>) result);
+            return Task.FromResult((IList<string>) roles);
         }
 
-        public Task<bool> IsInRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
+        public async Task<bool> IsInRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -966,13 +970,15 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(roleName));
             }
 
-            return Task.FromResult(user.Roles.Contains(new ElasticIdentityUserRole(roleName)));
+            var roles = await GetRolesAsync(user, cancellationToken);
+
+            return await Task.FromResult(roles.Contains(roleName));
         }
 
         public async Task<IList<TUser>> GetUsersInRoleAsync(string roleName, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (roleName == null)
             {
                 throw new ArgumentNullException(nameof(roleName));
@@ -980,10 +986,11 @@ namespace AspNetCore.Identity.Elastic
 
             var sd = new SearchDescriptor<TUser>()
                 .Version()
+                .Size(10000)
                 .Query(q => q
                     .Bool(b => b
                         .Must(
-                            bm => bm.Term(u => u.Roles, roleName)
+                            bm => bm.Term(u => u.Roles.Suffix("keyword"), roleName)
                         )
                         .MustNot(
                             bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
@@ -1005,7 +1012,7 @@ namespace AspNetCore.Identity.Elastic
         public Task SetPhoneNumberAsync(TUser user, string phoneNumber, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -1019,7 +1026,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<string> GetPhoneNumberAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -1031,7 +1038,7 @@ namespace AspNetCore.Identity.Elastic
         public Task<bool> GetPhoneNumberConfirmedAsync(TUser user, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -1043,7 +1050,7 @@ namespace AspNetCore.Identity.Elastic
         public Task SetPhoneNumberConfirmedAsync(TUser user, bool confirmed, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
+            ThrowIfDisposed();
             if (user == null)
             {
                 throw new ArgumentNullException(nameof(user));
@@ -1071,10 +1078,13 @@ namespace AspNetCore.Identity.Elastic
 
             var user = getResponse.Found ? getResponse.Source : null;
 
-            if (user != null && user.DateDeleted == null)
+            if (user == null || user.DateDeleted != null)
             {
-                user.Version = getResponse.Version;
+                return null;
             }
+
+            user.Version = getResponse.Version;
+
             return user;
         }
 
