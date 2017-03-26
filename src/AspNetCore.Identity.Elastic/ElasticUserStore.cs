@@ -1,19 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Elasticsearch.Net;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Options;
 using Nest;
 
 namespace AspNetCore.Identity.Elastic
 {
     /// <summary>
     /// The default implementation of <see cref="ElasticUserStore{TKey, TUser}"/> where Tkey is <see cref="string"/> and TUser is <see cref="ElasticIdentityUser"/>.
-    /// <para />
-    /// This implementation uses elastisearch explicit version numbering for concurrency control.
     /// </summary>
     public class ElasticUserStore : ElasticUserStore<string, ElasticIdentityUser>
     {
@@ -34,14 +34,17 @@ namespace AspNetCore.Identity.Elastic
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            var existingUser = await GetUserById(user.Id, cancellationToken);
+            var existingUser = await GetUserById(user.Id, cancellationToken, false);
 
             if (existingUser != null)
             {
-                return IdentityResult.Failed(ERROR_DESCRIBER.DuplicateUserName(user.UserName));
+                return IdentityResult.Failed(ErrorDescriber.DuplicateUserName(user.UserName));
             }
 
-            var result = await ELASTIC_CLIENT.CreateAsync(user, null, cancellationToken);
+            var result = await ElasticClient
+                .CreateAsync(user,
+                    c => c.Index(Options.IndexName).Type(Options.UserDocType),
+                    cancellationToken);
 
             return result.IsValid ? IdentityResult.Success : IdentityResult.Failed();
         }
@@ -63,17 +66,11 @@ namespace AspNetCore.Identity.Elastic
 
             user.DateDeleted = DateTimeOffset.UtcNow;
 
-            var result = await ELASTIC_CLIENT
-                .UpdateAsync(new DocumentPath<ElasticIdentityUser>(user),
-                    d => d
-                        .Doc(user)
-                        .Version(user.Version ?? 1)
-                        .Refresh(Refresh.True),
-                    cancellationToken);
+            var updateResponse = await UpdateUser(user, cancellationToken);
 
-            return result.IsValid
+            return updateResponse.IsValid
                 ? IdentityResult.Success
-                : IdentityResult.Failed(ERROR_DESCRIBER.ConcurrencyFailure());
+                : IdentityResult.Failed(ErrorDescriber.ConcurrencyFailure());
         }
 
         public override async Task<ElasticIdentityUser> FindByNameAsync(string normalizedUserName, CancellationToken cancellationToken)
@@ -106,12 +103,24 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(user));
             }
 
-            var indexResponse = await ELASTIC_CLIENT
-                .IndexAsync(user, x => x.Version(user.Version ?? 1), cancellationToken);
+            var updateResponse = await UpdateUser(user, cancellationToken);
 
-            return indexResponse.IsValid
+            return updateResponse.IsValid
                 ? IdentityResult.Success
-                : IdentityResult.Failed(ERROR_DESCRIBER.ConcurrencyFailure());
+                : IdentityResult.Failed(ErrorDescriber.ConcurrencyFailure());
+        }
+
+        private async Task<IUpdateResponse<ElasticIdentityUser>> UpdateUser(ElasticIdentityUser user, CancellationToken cancellationToken)
+        {
+            var indexResponse = await ElasticClient
+                .UpdateAsync(new DocumentPath<ElasticIdentityUser>(user),
+                    d => d
+                        .Doc(user)
+                        .Index(Options.IndexName)
+                        .Type(Options.UserDocType)
+                        .RetryOnConflict(3),
+                    cancellationToken);
+            return indexResponse;
         }
     }
 
@@ -129,9 +138,6 @@ namespace AspNetCore.Identity.Elastic
         where TKey : IEquatable<TKey>
         where TUser : ElasticIdentityUser<TKey>
     {
-        protected readonly IElasticClient ELASTIC_CLIENT;
-        protected readonly IdentityErrorDescriber ERROR_DESCRIBER = new IdentityErrorDescriber();
-        private readonly string _indexName;
         private bool _disposed;
 
         public ElasticUserStore(IElasticClient elasticClient)
@@ -154,8 +160,12 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(indexName, "Index name must be specified either through ConnectionSettings.MapDefaultTypeIndices or DefaultIndex");
             }
 
-            ELASTIC_CLIENT = elasticClient;
-            _indexName = indexName;
+            ElasticClient = elasticClient;
+
+            Options = new ElasticOptions
+            {
+                IndexName = indexName
+            };
 
             EnsureIndexExists();
         }
@@ -167,12 +177,55 @@ namespace AspNetCore.Identity.Elastic
         {
         }
 
+        public ElasticUserStore(IElasticClient elasticClient, IOptions<ElasticOptions> options)
+            : this(elasticClient, options.Value)
+        {
+        }
+
+        public ElasticUserStore(IElasticClient elasticClient, ElasticOptions options)
+        {
+
+            if (elasticClient == null)
+            {
+                throw new ArgumentException(nameof(elasticClient));
+            }
+
+            if (options == null)
+            {
+                throw new ArgumentException(nameof(options));
+            }
+
+            if (string.IsNullOrEmpty(options.IndexName))
+            {
+                throw new ArgumentException(nameof(options.IndexName));
+            }
+
+            if (string.IsNullOrEmpty(options.UserDocType))
+            {
+                throw new ArgumentException(nameof(options.UserDocType));
+            }
+
+            ElasticClient = elasticClient;
+
+            Options = options;
+
+            EnsureIndexExists();
+        }
+
+        protected static IdentityErrorDescriber ErrorDescriber => new IdentityErrorDescriber();
+
+        protected IElasticClient ElasticClient { get; }
+
+        public ElasticOptions Options { get; set; }
+
         public IQueryable<TUser> Users
         {
             get
             {
                 var sd = new SearchDescriptor<TUser>()
                     .Version()
+                    .Index(Options.IndexName)
+                    .Type(Options.UserDocType)
                     .Query(q => q
                         .Bool(b => b
                             .MustNot(
@@ -181,7 +234,7 @@ namespace AspNetCore.Identity.Elastic
                         )
                     );
 
-                return ELASTIC_CLIENT.Search<TUser>(sd).Documents.AsQueryable();
+                return ElasticClient.Search<TUser>(sd).Documents.AsQueryable();
             }
         }
 
@@ -243,9 +296,12 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(user));
             }
 
-            var result = await ELASTIC_CLIENT.CreateAsync(user, d => d.Refresh(Refresh.True), cancellationToken);
+            var result = await ElasticClient
+                .CreateAsync(user,
+                    c => c.Index(Options.IndexName).Type(Options.UserDocType).Refresh(Refresh.True),
+                    cancellationToken);
 
-            return  result.IsValid? IdentityResult.Success : IdentityResult.Failed();
+            return result.IsValid ? IdentityResult.Success : IdentityResult.Failed();
         }
 
         /// <summary>
@@ -263,20 +319,15 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(user));
             }
 
-            var result = await ELASTIC_CLIENT.DeleteAsync(DocumentPath<TUser>.Id(user), d => d
+            var result = await ElasticClient.DeleteAsync(DocumentPath<TUser>.Id(user)
+                , d => d
+                    .Index(Options.IndexName)
+                    .Type(Options.UserDocType)
                     .Version(user.Version ?? 1)
                     .Refresh(Refresh.True)
                 , cancellationToken);
 
             return result.IsValid ? IdentityResult.Success : IdentityResult.Failed(new IdentityError{Description = result.Result.ToString()});
-        }
-
-        /// <summary>
-        /// Dispose the store
-        /// </summary>
-        public void Dispose()
-        {
-            _disposed = true;
         }
 
         public async Task<TUser> FindByEmailAsync(string normalizedEmail, CancellationToken cancellationToken)
@@ -289,15 +340,13 @@ namespace AspNetCore.Identity.Elastic
             }
 
             var sd = new SearchDescriptor<TUser>()
+                .Index(Options.IndexName)
+                .Type(Options.UserDocType)
                 .Version()
                 .Query(q => q
                     .Bool(b => b
                         .Must(
-                            bm => bm.
-                                Term(t => t
-                                    .Field(tf => tf.NormalizedEmail.Suffix("keyword"))
-                                    .Value(normalizedEmail.ToLowerInvariant())
-                                )
+                            bm => bm.Term(u => u.NormalizedEmail, normalizedEmail.ToLowerInvariant())
                         )
                         .MustNot(
                             bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
@@ -305,7 +354,7 @@ namespace AspNetCore.Identity.Elastic
                     )
                 );
 
-            var result = await ELASTIC_CLIENT.SearchAsync<TUser>(sd, cancellationToken);
+            var result = await ElasticClient.SearchAsync<TUser>(sd, cancellationToken);
 
             return GetFirstUserOrDefault(result);
         }
@@ -337,14 +386,35 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(providerKey));
             }
 
+            Expression<Func<TUser, object>> loginProviderField = u => u.Logins.First().LoginProvider;
+            Expression<Func<TUser, object>> providerKeyField = u => u.Logins.First().ProviderKey;
+
             var sd = new SearchDescriptor<TUser>()
+                .Index(Options.IndexName)
+                .Type(Options.UserDocType)
                 .Version()
                 .Size(1)
                 .Query(q => q
                     .Bool(b => b
                         .Must(
-                            bm => bm.Term(u => u.Logins.First().LoginProvider.Suffix("keyword"), loginProvider),
-                            bm => bm.Term(u => u.Logins.First().ProviderKey.Suffix("keyword"), providerKey)
+                            bm => bm.Term(loginProviderField, loginProvider),
+                            bm => bm.Term(providerKeyField, providerKey),
+                            bm => bm.Nested(n => n
+                                .Path(p => p.Logins)
+                                .IgnoreUnmapped(true) // if 'Logins' is not nested
+                                .Query(nq => nq
+                                    .Bool(bb => bb
+                                        .Must(
+                                            bbm =>
+                                                bbm.Term(loginProviderField,
+                                                    loginProvider),
+                                            bbm =>
+                                                bbm.Term(providerKeyField,
+                                                    providerKey)
+                                        )
+                                    )
+                                )
+                            )
                         )
                         .MustNot(
                             bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
@@ -353,7 +423,7 @@ namespace AspNetCore.Identity.Elastic
                     )
                 );
 
-            var result = await ELASTIC_CLIENT.SearchAsync<TUser>(sd, cancellationToken);
+            var result = await ElasticClient.SearchAsync<TUser>(sd, cancellationToken);
 
             if (!result.IsValid)
             {
@@ -384,12 +454,14 @@ namespace AspNetCore.Identity.Elastic
             var lowerInvariantUserName = normalizedUserName.ToLowerInvariant();
 
             var sd = new SearchDescriptor<TUser>()
+                .Index(Options.IndexName)
+                .Type(Options.UserDocType)
                 .Version()
                 .Size(1)
                 .Query(q => q
                     .Bool(b => b
                         .Must(
-                            bm => bm.Term(u => u.NormalizedUserName.Suffix("keyword"), lowerInvariantUserName)
+                            bm => bm.Term(u => u.NormalizedUserName, lowerInvariantUserName)
                         )
                         .MustNot(
                             bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
@@ -397,7 +469,7 @@ namespace AspNetCore.Identity.Elastic
                     )
                 );
 
-            var result = await ELASTIC_CLIENT.SearchAsync<TUser>(sd, cancellationToken);
+            var result = await ElasticClient.SearchAsync<TUser>(sd, cancellationToken);
             var user = GetFirstUserOrDefault(result);
             return user;
         }
@@ -593,14 +665,31 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(claim));
             }
 
+            Expression<Func<TUser, object>> claimTypeField = u => u.Claims.First().Type;
+            Expression<Func<TUser, object>> claimValueField = u => u.Claims.First().Value;
+
             var sd = new SearchDescriptor<TUser>()
+                .Index(Options.IndexName)
+                .Type(Options.UserDocType)
                 .Version()
-                .Size(10000)
+                .Size(Options.QuerySize)
                 .Query(q => q
                     .Bool(b => b
                         .Must(
-                            bm => bm.Term(u => u.Claims.First().Type.Suffix("keyword"), claim.Type),
-                            bm => bm.Term(u => u.Claims.First().Value.Suffix("keyword"), claim.Value)
+                            bm => bm.Term(claimTypeField, claim.Type),
+                            bm => bm.Term(claimValueField, claim.Value),
+                            bm => bm.Nested(n => n
+                                .Path(p => p.Claims)
+                                .IgnoreUnmapped(true) // if claims is not nested
+                                .Query(nq => nq
+                                    .Bool(bb => bb
+                                        .Must(
+                                            bbm => bbm.Term(t => t.Field(claimTypeField).Value(claim.Type)),
+                                            bbm => bbm.Term(t => t.Field(claimValueField).Value(claim.Value))
+                                        )
+                                    )
+                                )
+                            )
                         )
                         .MustNot(
                             bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
@@ -609,7 +698,7 @@ namespace AspNetCore.Identity.Elastic
                     )
                 );
 
-            var result = await ELASTIC_CLIENT.SearchAsync<TUser>(sd, cancellationToken);
+            var result = await ElasticClient.SearchAsync<TUser>(sd, cancellationToken);
 
             if (!result.IsValid)
             {
@@ -625,6 +714,7 @@ namespace AspNetCore.Identity.Elastic
                     return user;
                 })
                 // assuming that claims is not nested
+                // if it is then this doesn't do much
                 .Where(u => u.Claims.Any(c => c.Type == claim.Type && c.Value == claim.Value))
                 .ToList();
         }
@@ -651,7 +741,6 @@ namespace AspNetCore.Identity.Elastic
             }
 
             user.AccessFailedCount++;
-
             return await Task.FromResult(user.AccessFailedCount);
         }
 
@@ -698,12 +787,9 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(providerKey));
             }
 
-            var login = user.Logins.FirstOrDefault(l => l.LoginProvider == providerKey && l.LoginProvider == loginProvider);
+            var login = new ElasticIdentityUserLogin(loginProvider, providerKey, string.Empty);
 
-            if (login != null)
-            {
-                user.Logins.Remove(login);
-            }
+            user.Logins.Remove(login);
 
             return Task.CompletedTask;
         }
@@ -761,14 +847,7 @@ namespace AspNetCore.Identity.Elastic
                 throw new InvalidOperationException("User doesn't have an email.");
             }
 
-            if (confirmed)
-            {
-                user.SetEmailConfirmed();
-            }
-            else
-            {
-                user.SetEmailConfirmed();
-            }
+            user.EmailConfirmed = confirmed;
 
             return Task.CompletedTask;
         }
@@ -894,12 +973,18 @@ namespace AspNetCore.Identity.Elastic
                     "A null or empty User.Id value is not allowed.");
             }
 
-            var indexResponse = await ELASTIC_CLIENT
-                .IndexAsync(user, x => x.Refresh(Refresh.True), cancellationToken);
+            var indexResponse = await ElasticClient
+                .UpdateAsync(new DocumentPath<TUser>(user),
+                    d => d
+                        .Index(Options.IndexName)
+                        .Type(Options.UserDocType)
+                        .Doc(user)
+                        .Refresh(Refresh.True),
+                    cancellationToken);
 
             return indexResponse.IsValid 
                 ? IdentityResult.Success 
-                : IdentityResult.Failed(ERROR_DESCRIBER.ConcurrencyFailure());
+                : IdentityResult.Failed(ErrorDescriber.ConcurrencyFailure());
         }
 
         public async Task AddToRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
@@ -985,20 +1070,20 @@ namespace AspNetCore.Identity.Elastic
             }
 
             var sd = new SearchDescriptor<TUser>()
+                .Index(Options.IndexName)
+                .Type(Options.UserDocType)
                 .Version()
-                .Size(10000)
+                .Size(Options.QuerySize)
                 .Query(q => q
                     .Bool(b => b
-                        .Must(
-                            bm => bm.Term(u => u.Roles.Suffix("keyword"), roleName)
-                        )
+                        .Must(bm => bm.Term(u => u.Roles.First().RoleId, roleName))
                         .MustNot(
                             bmn => bmn.Exists(f => f.Field(u => u.DateDeleted))
                         )
                     )
                 );
 
-            var result = await ELASTIC_CLIENT.SearchAsync<TUser>(sd, cancellationToken);
+            var result = await ElasticClient.SearchAsync<TUser>(sd, cancellationToken);
 
             return result.Hits.Where(h => h.Source != null).Select(u =>
                 {
@@ -1062,6 +1147,14 @@ namespace AspNetCore.Identity.Elastic
         }
 
         /// <summary>
+        /// Dispose the store
+        /// </summary>
+        public void Dispose()
+        {
+            _disposed = true;
+        }
+
+        /// <summary>
         /// Throws if this class has been disposed.
         /// </summary>
         protected void ThrowIfDisposed()
@@ -1072,13 +1165,15 @@ namespace AspNetCore.Identity.Elastic
             }
         }
 
-        protected async Task<TUser> GetUserById(string userId, CancellationToken cancellationToken)
+        protected async Task<TUser> GetUserById(string userId, CancellationToken cancellationToken,
+            bool excludeDeleted = true)
         {
-            var getResponse = await ELASTIC_CLIENT.GetAsync(DocumentPath<TUser>.Id(userId), cancellationToken: cancellationToken);
+            var getResponse = await ElasticClient.GetAsync(DocumentPath<TUser>.Id(userId),
+                s => s.Index(Options.IndexName).Type(Options.UserDocType), cancellationToken);
 
             var user = getResponse.Found ? getResponse.Source : null;
 
-            if (user == null || user.DateDeleted != null)
+            if (user == null || (excludeDeleted && user.DateDeleted != null))
             {
                 return null;
             }
@@ -1101,14 +1196,14 @@ namespace AspNetCore.Identity.Elastic
 
         private void EnsureIndexExists()
         {
-            var indexExists = ELASTIC_CLIENT.IndexExists(new IndexExistsRequest(_indexName)).Exists;
+            var indexExists = ElasticClient.IndexExists(new IndexExistsRequest(Options.IndexName)).Exists;
 
             if (indexExists)
             {
                 return;
             }
 
-            var response = ELASTIC_CLIENT.CreateIndex(_indexName, GetIndexMappings);
+            var response = ElasticClient.CreateIndex(Options.IndexName, GetIndexMappings);
 
             if (!response.ApiCall.Success)
             {
@@ -1116,15 +1211,22 @@ namespace AspNetCore.Identity.Elastic
             }
         }
 
-        private static ICreateIndexRequest GetIndexMappings(CreateIndexDescriptor createIndexDescriptor)
+        private ICreateIndexRequest GetIndexMappings(CreateIndexDescriptor createIndexDescriptor)
         {
-            return createIndexDescriptor.Mappings(m => m
-                .Map<TUser>(mm => mm
-                    .AutoMap()
-                    .AllField(af => af
-                        .Enabled(false))
+            return createIndexDescriptor
+                .Settings(s => s
+                    .NumberOfShards(Options.NumberOfShards)
+                    .NumberOfReplicas(Options.NumberOfReplicas)
                 )
-            );
+                .Mappings(m => m
+                    .Map<TUser>(
+                        Options.UserDocType,
+                        mm => mm
+                            .AutoMap()
+                            .AllField(af => af
+                                .Enabled(false))
+                    )
+                );
         }
     }
 }

@@ -4,6 +4,7 @@ using System.Security.Claims;
 using Xunit;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Identity;
 using Nest;
 
 namespace AspNetCore.Identity.Elastic.Tests
@@ -38,6 +39,8 @@ namespace AspNetCore.Identity.Elastic.Tests
             // the generic store refreshes immediately
             var store = new ElasticUserStore<string, ElasticIdentityUser>(_elasticClient);
             store.CreateAsync(_user1, CancellationToken.None).GetAwaiter().GetResult();
+
+            _elasticClient.Refresh(_indexName);
         }
 
         [Fact]
@@ -51,9 +54,31 @@ namespace AspNetCore.Identity.Elastic.Tests
         }
 
         [Fact]
+        public async Task CanCreateUserWithoutConstraints()
+        {
+            ElasticIdentityUser superUser = new ElasticIdentityUser("!£$%^&*()_+\"/[]{}@~#?¬`¦|€:;'ιϊνσα,.<>")
+            {
+                Email = "user2@AspNetCore.Identity.Elastic.Tests"
+            };
+            var result = await _store.CreateAsync(superUser, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+            var user = await _store.FindByIdAsync(superUser.Id, CancellationToken.None);
+            Assert.Equal(superUser.Id, user.Id);
+        }
+
+        [Fact]
         public async Task CannotCreateDuplicateUser()
         {
-            var result = await _store.CreateAsync(_user1, CancellationToken.None);
+            ElasticIdentityUser deleteUser = new ElasticIdentityUser("deletedUser")
+            {
+                Email = "deleteUser@AspNetCore.Identity.Elastic.Tests",
+                DateDeleted = DateTimeOffset.UtcNow
+            };
+
+            await _store.CreateAsync(deleteUser, CancellationToken.None);
+
+            var result = await _store.CreateAsync(deleteUser, CancellationToken.None);
 
             Assert.False(result.Succeeded);
         }
@@ -226,6 +251,74 @@ namespace AspNetCore.Identity.Elastic.Tests
             var users = await _store.GetUsersForClaimAsync(claimType11, CancellationToken.None);
 
             Assert.Equal(nameof(noClaimsUser11), users.FirstOrDefault().UserName);
+        }
+
+        [Fact]
+        public async Task CanAddLogins()
+        {
+            var loginInfo = new UserLoginInfo("loginProvider", "key-123", "Login Provider");
+            var user = await _store.FindByNameAsync(_user1.NormalizedUserName, CancellationToken.None);
+
+            Assert.Empty(user.Logins);
+
+            await _store.AddLoginAsync(user, loginInfo, CancellationToken.None);
+            await SaveToElastic(user);
+
+            user = await GetFromElastic(user.NormalizedUserName);
+
+            Assert.NotEmpty(user.Logins);
+        }
+
+        [Fact]
+        public async Task CanRemoveLogin()
+        {
+            var loginInfo = new UserLoginInfo("loginProvider", "key-123", "Login Provider");
+
+            ElasticIdentityUser noLoginsUser = new ElasticIdentityUser(nameof(noLoginsUser));
+            await _store.AddLoginAsync(noLoginsUser, loginInfo, CancellationToken.None);
+            await _store.CreateAsync(noLoginsUser, CancellationToken.None);
+
+            var user = await _store.FindByNameAsync(noLoginsUser.NormalizedUserName, CancellationToken.None);
+
+            Assert.NotEmpty(user.Logins);
+
+            await _store.RemoveLoginAsync(user, loginInfo.LoginProvider, loginInfo.ProviderKey, CancellationToken.None);
+            await SaveToElastic(user);
+
+            user = await GetFromElastic(user.NormalizedUserName);
+
+            Assert.Empty(user.Logins);
+        }
+
+        [Fact]
+        public async Task CanFindByLogin()
+        {
+            var type11 = new ElasticIdentityUserLogin("loginProvider1", "providerKey1", "Login Provider 1");
+            var type12 = new ElasticIdentityUserLogin("loginProvider1", "providerKey2", "Login Provider 1");
+            var type21 = new ElasticIdentityUserLogin("loginProvider2", "providerKey1", "Login Provider 2");
+
+            // user type 11
+            ElasticIdentityUser user11 = new ElasticIdentityUser(nameof(user11));
+            user11.Logins.Add(type11);
+            await _store.CreateAsync(user11, CancellationToken.None);
+
+            // user type 12
+            ElasticIdentityUser user12 = new ElasticIdentityUser(nameof(user12));
+            user12.Logins.Add(type12);
+            user12.Logins.Add(type21);
+            await _store.CreateAsync(user12, CancellationToken.None);
+
+            // user type 21
+            ElasticIdentityUser user21 = new ElasticIdentityUser(nameof(user21));
+            user21.Logins.Add(type21);
+            user21.Logins.Add(type12);
+            await _store.CreateAsync(user21, CancellationToken.None);
+
+            _elasticClient.Refresh(_indexName);
+
+            var user = await _store.FindByLoginAsync(type11.LoginProvider, type11.ProviderKey, CancellationToken.None);
+
+            Assert.Equal(nameof(user11), user.UserName);
         }
 
         private async Task<ElasticIdentityUser> GetFromElastic(string userName)

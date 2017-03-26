@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Security.Claims;
+using Nest;
 
 namespace AspNetCore.Identity.Elastic
 {
@@ -34,8 +35,10 @@ namespace AspNetCore.Identity.Elastic
             Value = claimValue;
         }
 
+        [Keyword]
         public string Type { get; set; }
 
+        [Keyword]
         public string Value { get; set; }
 
         public Claim ToClaim()
