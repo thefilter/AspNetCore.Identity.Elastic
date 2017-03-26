@@ -29,7 +29,7 @@ namespace AspNetCore.Identity.Elastic.Tests
         public ElasticUserStoreTest()
         {
             _indexName = Guid.NewGuid() + "users";
-            var node = new Uri("http://localhost.:9200");
+            var node = new Uri("http://127.0.0.1:9200");
             var settings = new ConnectionSettings(node);
             settings.MapDefaultTypeIndices(m => m.Add(typeof(ElasticIdentityUser), _indexName));
             _elasticClient = new ElasticClient(settings);
