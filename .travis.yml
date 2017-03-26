@@ -5,3 +5,5 @@ mono: none
 dotnet: 1.0.1
 script:
   - ./build.sh --quiet verify
+  before_install:
+ - chmod +x ./build.sh
