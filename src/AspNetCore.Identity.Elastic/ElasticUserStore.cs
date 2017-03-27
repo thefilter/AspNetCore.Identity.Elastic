@@ -25,6 +25,16 @@ namespace AspNetCore.Identity.Elastic
         {
         }
 
+        public ElasticUserStore(IElasticClient elasticClient, ElasticOptions options)
+            : base(elasticClient, options)
+        {
+        }
+
+        public ElasticUserStore(IElasticClient elasticClient, IOptions<ElasticOptions> options)
+            : base(elasticClient, options)
+        {
+        }
+
         public override async Task<IdentityResult> CreateAsync(ElasticIdentityUser user, CancellationToken cancellationToken)
         {
             if (user == null)
