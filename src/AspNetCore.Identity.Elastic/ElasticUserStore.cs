@@ -51,12 +51,12 @@ namespace AspNetCore.Identity.Elastic
                 return IdentityResult.Failed(ErrorDescriber.DuplicateUserName(user.UserName));
             }
 
-            var result = await ElasticClient
+            var createResponse = await ElasticClient
                 .CreateAsync(user,
                     c => c.Index(Options.IndexName).Type(Options.UserDocType),
                     cancellationToken);
 
-            return result.IsValid ? IdentityResult.Success : IdentityResult.Failed();
+            return ProcessChangeOperationResponseForIdentityOperation(createResponse);
         }
 
         /// <summary>
@@ -78,9 +78,7 @@ namespace AspNetCore.Identity.Elastic
 
             var updateResponse = await UpdateUser(user, cancellationToken);
 
-            return updateResponse.IsValid
-                ? IdentityResult.Success
-                : IdentityResult.Failed(ErrorDescriber.ConcurrencyFailure());
+            return ProcessChangeOperationResponseForIdentityOperation(updateResponse);
         }
 
         public override async Task<ElasticIdentityUser> FindByNameAsync(string normalizedUserName, CancellationToken cancellationToken)
@@ -115,9 +113,7 @@ namespace AspNetCore.Identity.Elastic
 
             var updateResponse = await UpdateUser(user, cancellationToken);
 
-            return updateResponse.IsValid
-                ? IdentityResult.Success
-                : IdentityResult.Failed(ErrorDescriber.ConcurrencyFailure());
+            return ProcessChangeOperationResponseForIdentityOperation(updateResponse);
         }
 
         private async Task<IUpdateResponse<ElasticIdentityUser>> UpdateUser(ElasticIdentityUser user, CancellationToken cancellationToken)
@@ -306,12 +302,12 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(user));
             }
 
-            var result = await ElasticClient
+            var createResponse = await ElasticClient
                 .CreateAsync(user,
                     c => c.Index(Options.IndexName).Type(Options.UserDocType).Refresh(Refresh.True),
                     cancellationToken);
 
-            return result.IsValid ? IdentityResult.Success : IdentityResult.Failed();
+            return ProcessChangeOperationResponseForIdentityOperation(createResponse);
         }
 
         /// <summary>
@@ -329,7 +325,7 @@ namespace AspNetCore.Identity.Elastic
                 throw new ArgumentNullException(nameof(user));
             }
 
-            var result = await ElasticClient.DeleteAsync(DocumentPath<TUser>.Id(user)
+            var deleteResponse = await ElasticClient.DeleteAsync(DocumentPath<TUser>.Id(user)
                 , d => d
                     .Index(Options.IndexName)
                     .Type(Options.UserDocType)
@@ -337,7 +333,7 @@ namespace AspNetCore.Identity.Elastic
                     .Refresh(Refresh.True)
                 , cancellationToken);
 
-            return result.IsValid ? IdentityResult.Success : IdentityResult.Failed(new IdentityError{Description = result.Result.ToString()});
+            return ProcessChangeOperationResponseForIdentityOperation(deleteResponse);
         }
 
         public async Task<TUser> FindByEmailAsync(string normalizedEmail, CancellationToken cancellationToken)
@@ -992,9 +988,7 @@ namespace AspNetCore.Identity.Elastic
                         .Refresh(Refresh.True),
                     cancellationToken);
 
-            return indexResponse.IsValid 
-                ? IdentityResult.Success 
-                : IdentityResult.Failed(ErrorDescriber.ConcurrencyFailure());
+            return ProcessChangeOperationResponseForIdentityOperation(indexResponse);            
         }
 
         public async Task AddToRoleAsync(TUser user, string roleName, CancellationToken cancellationToken)
@@ -1237,6 +1231,21 @@ namespace AspNetCore.Identity.Elastic
                                 .Enabled(false))
                     )
                 );
+        }
+
+        protected IdentityResult ProcessChangeOperationResponseForIdentityOperation(IResponse response)
+        {
+            switch (response)
+            {
+                case IResponse r when r.IsValid:
+                    return IdentityResult.Success;
+                case IResponse r when r.ServerError.Status == 409:
+                    return IdentityResult.Failed(ErrorDescriber.ConcurrencyFailure());
+                case IResponse r when r.OriginalException != null:
+                    throw response.OriginalException;
+                default :
+                    throw new Exception($"{response.ServerError.Status} - {response.ServerError.Error}");
+            }
         }
     }
 }
