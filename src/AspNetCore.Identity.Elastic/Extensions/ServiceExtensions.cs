@@ -28,11 +28,9 @@ namespace AspNetCore.Identity.Elastic.Extensions
         public static void AddElasticIdentity(this IServiceCollection services, string serverName, string indexName = DEFAULT_INDEX_NAME)
         {
             var node = new Uri("http://" + serverName.Replace("http://", ""));
-            var settings = new ConnectionSettings(node);
-            settings.MapDefaultTypeIndices(m => m
-                .Add(typeof(ElasticIdentityUser), indexName));
-            var elasticClient = new ElasticClient(settings);
 
+            IElasticClient elasticClient = ElasticClientFactory.Create(node, indexName);
+            
             AddElasticIdentity(services, elasticClient);
         }
     }

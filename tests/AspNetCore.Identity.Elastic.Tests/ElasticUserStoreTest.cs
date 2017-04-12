@@ -12,7 +12,7 @@ namespace AspNetCore.Identity.Elastic.Tests
     public class ElasticUserStoreTest : IDisposable
     {
         private readonly ElasticUserStore _store;
-        private readonly ElasticClient _elasticClient;
+        private readonly IElasticClient _elasticClient;
 
         private readonly ElasticIdentityUser _user1 = new ElasticIdentityUser("user1")
         {
@@ -29,10 +29,9 @@ namespace AspNetCore.Identity.Elastic.Tests
         public ElasticUserStoreTest()
         {
             _indexName = Guid.NewGuid() + "users";
-            var node = new Uri("http://127.0.0.1:9200");
-            var settings = new ConnectionSettings(node);
-            settings.MapDefaultTypeIndices(m => m.Add(typeof(ElasticIdentityUser), _indexName));
-            _elasticClient = new ElasticClient(settings);
+            var node = new Uri("http://localhost:9200");
+
+            _elasticClient = ElasticClientFactory.Create(node, _indexName);
 
             _store = new ElasticUserStore(_elasticClient);
 
