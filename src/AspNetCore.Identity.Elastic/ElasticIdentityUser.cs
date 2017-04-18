@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Nest;
+using Newtonsoft.Json;
 
 namespace AspNetCore.Identity.Elastic
 {
@@ -70,18 +71,23 @@ namespace AspNetCore.Identity.Elastic
         public bool IsTwoFactorEnabled { get; set; }
 
         [Date(Format = ISO_DATE_FORMAT)]
+        [JsonConverter(typeof(UtcIsoDateTimeConverter))]
         public DateTimeOffset DateCreated { get; set; } = DateTimeOffset.UtcNow;
 
         [Date(Format = ISO_DATE_FORMAT)]
+        [JsonConverter(typeof(UtcIsoDateTimeConverter))]
         public DateTimeOffset? DateDeleted { get; set; } = null;
 
         [Date(Format = ISO_DATE_FORMAT)]
+        [JsonConverter(typeof(UtcIsoDateTimeConverter))]
         public DateTimeOffset? LastLoginDate { get; set; } = null;
 
         [Date(Format = ISO_DATE_FORMAT)]
+        [JsonConverter(typeof(UtcIsoDateTimeConverter))]
         public DateTimeOffset? LastPasswordChangedDate { get; set; } = null;
 
         [Date(Format = ISO_DATE_FORMAT)]
+        [JsonConverter(typeof(UtcIsoDateTimeConverter))]
         public DateTimeOffset? LockoutEndDate { get; set; }
 
         [Nested(IncludeInParent = true)]

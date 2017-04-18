@@ -28,7 +28,7 @@ namespace AspNetCore.Identity.Elastic.Tests
 
         public ElasticUserStoreTest()
         {
-            _indexName = Guid.NewGuid() + "users";
+            _indexName = $"{nameof(ElasticUserStoreTest)}_{Guid.NewGuid()}".ToLowerInvariant();
             var node = new Uri("http://localhost:9200");
 
             _elasticClient = ElasticClientFactory.Create(node, _indexName);
@@ -318,6 +318,129 @@ namespace AspNetCore.Identity.Elastic.Tests
             var user = await _store.FindByLoginAsync(type11.LoginProvider, type11.ProviderKey, CancellationToken.None);
 
             Assert.Equal(nameof(user11), user.UserName);
+        }
+
+        [Fact]
+        public async Task CanUpdateUser()
+        {
+            var originalDateCreated = _user2.DateCreated;
+
+            var result = await _store.CreateAsync(_user2, CancellationToken.None);
+
+            _elasticClient.Refresh(_indexName);
+
+            Assert.True(result.Succeeded);
+
+            var user = await _store.FindByIdAsync(_user2.Id, CancellationToken.None);
+
+            Assert.Equal(_user2.Id, user.Id);
+
+            DateTimeOffset newDateCreated = (originalDateCreated + TimeSpan.FromSeconds(1));
+
+            _user2.DateCreated = newDateCreated;
+
+            var updateResult = await _store.UpdateAsync(_user2, CancellationToken.None);
+
+            _elasticClient.Refresh(_indexName);
+
+            user = await _store.FindByIdAsync(_user2.Id, CancellationToken.None);
+            
+            Assert.Equal(
+                newDateCreated, 
+                user.DateCreated);
+
+            DateTimeOffset newerDateCreated = (newDateCreated + TimeSpan.FromSeconds(1));
+
+            _user2.DateCreated = newerDateCreated;
+
+            updateResult = await _store.UpdateAsync(_user2, CancellationToken.None);
+            
+            _elasticClient.Refresh(_indexName);
+
+            user = await _store.FindByIdAsync(_user2.Id, CancellationToken.None);
+            
+            Assert.Equal(
+                newerDateCreated,
+                user.DateCreated);
+        }
+
+        /// <summary>
+        /// There is a scenario where, if the correct JsonConverter is not being used for serialisation, any 
+        /// DateTimeOffset property will serialize without any milliseconds and fail to write to the index, due to a 
+        /// conflict with the strict_date_time format specified in the mapping for the user document type.
+        /// </summary>
+        [Fact]
+        public async Task CanUpdateUserWithZeroMilliseconds()
+        {
+            _user2.DateCreated = DateTimeOffset.UtcNow.Date;
+
+            var originalDateCreated = _user2.DateCreated;
+
+            var result = await _store.CreateAsync(_user2, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+
+            _elasticClient.Refresh(_indexName);
+
+            var user = await _store.FindByIdAsync(_user2.Id, CancellationToken.None);
+
+            Assert.Equal(_user2.Id, user.Id);
+
+            DateTimeOffset newDateCreated = (originalDateCreated + TimeSpan.FromSeconds(1));
+
+            _user2.DateCreated = newDateCreated;
+
+            var updateResult = await _store.UpdateAsync(_user2, CancellationToken.None);
+
+            _elasticClient.Refresh(_indexName);
+
+            user = await _store.FindByIdAsync(_user2.Id, CancellationToken.None);
+
+            Assert.NotEqual(originalDateCreated, user.DateCreated);
+
+            Assert.Equal(
+                newDateCreated,
+                user.DateCreated);
+        }
+
+
+        /// <summary>
+        /// Non-Utc datetimes should be stored as utc, since that's what we're working with internally.
+        /// </summary>
+        [Fact]
+        public async Task CanUpdateUserWithNonUtcDateAndStoreAsUtc()
+        {
+            _user2.LastLoginDate = _user2.DateCreated;
+
+            _user2.LastLoginDate = _user2.LastLoginDate.Value.ToOffset(TimeSpan.FromHours(5));
+
+            var originalLoginDate = _user2.LastLoginDate;
+
+            var result = await _store.CreateAsync(_user2, CancellationToken.None);
+
+            Assert.True(result.Succeeded);
+
+            _elasticClient.Refresh(_indexName);
+
+            var user = await _store.FindByIdAsync(_user2.Id, CancellationToken.None);
+
+            Assert.Equal(_user2.Id, user.Id);
+
+            DateTimeOffset? newLoginDate = (originalLoginDate.Value + TimeSpan.FromSeconds(1));
+
+            _user2.LastLoginDate = newLoginDate;
+            
+            var updateResult = await _store.UpdateAsync(_user2, CancellationToken.None);
+
+            _elasticClient.Refresh(_indexName);
+
+            user = await _store.FindByIdAsync(_user2.Id, CancellationToken.None);
+
+            Assert.NotEqual(originalLoginDate, user.LastLoginDate);
+
+            Assert.Equal(
+                newLoginDate,
+                user.LastLoginDate);
         }
 
         private async Task<ElasticIdentityUser> GetFromElastic(string userName)

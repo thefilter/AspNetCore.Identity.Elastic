@@ -8,11 +8,25 @@ namespace AspNetCore.Identity.Elastic.Extensions
 {
     public static class ServiceExtensions
     {
-        private const string DEFAULT_INDEX_NAME = "users";
+        private const string DEFAULT_INDEX_NAME = "users";        
 
-        public static void AddElasticIdentity(this IServiceCollection services, IElasticClient elasticClient)
+        /// <summary>
+        /// Registers singleton <see cref="ElasticUserStore"/> component for 
+        /// <see cref="IUserStore{ElasticIdentityUser}"/> with the parameters supplied by the provided 
+        /// <see cref="ElasticUserStoreOptions"/>, and registers dependencies for that component which have not already been 
+        /// registered.
+        /// </summary>
+        /// <param name="elasticClient">
+        /// The <see cref="IElasticClient"/> which will be used by the <see cref="ElasticUserStore"/>.
+        /// </param>
+        public static void AddElasticIdentity(
+            this IServiceCollection services, 
+            IElasticClient elasticClient)
         {
-            services.AddSingleton<IUserStore<ElasticIdentityUser>>(provider => new ElasticUserStore(elasticClient));
+            services.TryAddSingleton<IElasticClient>(elasticClient);
+
+            services.AddSingleton<IUserStore<ElasticIdentityUser>, ElasticUserStore>();
+
             services.TryAddSingleton<IdentityMarkerService>();
             services.TryAddSingleton<IUserValidator<ElasticIdentityUser>, UserValidator<ElasticIdentityUser>>();
             services.TryAddSingleton<IPasswordValidator<ElasticIdentityUser>, PasswordValidator<ElasticIdentityUser>>();
@@ -25,9 +39,24 @@ namespace AspNetCore.Identity.Elastic.Extensions
             services.TryAddScoped<SignInManager<ElasticIdentityUser>, SignInManager<ElasticIdentityUser>>();
         }
 
-        public static void AddElasticIdentity(this IServiceCollection services, string serverName, string indexName = DEFAULT_INDEX_NAME)
+        /// <summary>
+        /// Registers singleton <see cref="ElasticUserStore"/> component for 
+        /// <see cref="IUserStore{ElasticIdentityUser}"/> with the parameters supplied by the provided 
+        /// <see cref="ElasticUserStoreOptions"/>, and registers dependencies for that component which have not already been 
+        /// registered.
+        /// </summary>
+        /// <param name="serverName">
+        /// The server:port combination which the <see cref="ElasticUserStore"/> will connect to. E.g. localhost:9200
+        /// </param>
+        /// <param name="indexName">
+        /// The index which will contain the user information.
+        /// </param>
+        public static void AddElasticIdentity(
+            this IServiceCollection services, 
+            string serverName, 
+            string indexName = DEFAULT_INDEX_NAME)
         {
-            var node = new Uri("http://" + serverName.Replace("http://", ""));
+            var node = new Uri("http://" + serverName.Replace("http://", ""));            
 
             IElasticClient elasticClient = ElasticClientFactory.Create(node, indexName);
             
