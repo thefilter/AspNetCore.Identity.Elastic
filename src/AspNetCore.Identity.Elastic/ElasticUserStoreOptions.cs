@@ -1,6 +1,6 @@
 ﻿namespace AspNetCore.Identity.Elastic
 {
-    public class ElasticOptions
+    public class ElasticUserStoreOptions
     {
         private const int DEFAULT_QUERY_SIZE = 10000;
         private const int NUMBER_OF_SHARDS = 1;

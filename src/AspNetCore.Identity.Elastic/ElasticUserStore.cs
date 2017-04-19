@@ -25,12 +25,12 @@ namespace AspNetCore.Identity.Elastic
         {
         }
 
-        public ElasticUserStore(IElasticClient elasticClient, ElasticOptions options)
+        public ElasticUserStore(IElasticClient elasticClient, ElasticUserStoreOptions options)
             : base(elasticClient, options)
         {
         }
 
-        public ElasticUserStore(IElasticClient elasticClient, IOptions<ElasticOptions> options)
+        public ElasticUserStore(IElasticClient elasticClient, IOptions<ElasticUserStoreOptions> options)
             : base(elasticClient, options)
         {
         }
@@ -168,7 +168,7 @@ namespace AspNetCore.Identity.Elastic
 
             ElasticClient = elasticClient;
 
-            Options = new ElasticOptions
+            Options = new ElasticUserStoreOptions
             {
                 IndexName = indexName
             };
@@ -183,12 +183,12 @@ namespace AspNetCore.Identity.Elastic
         {
         }
 
-        public ElasticUserStore(IElasticClient elasticClient, IOptions<ElasticOptions> options)
+        public ElasticUserStore(IElasticClient elasticClient, IOptions<ElasticUserStoreOptions> options)
             : this(elasticClient, options.Value)
         {
         }
 
-        public ElasticUserStore(IElasticClient elasticClient, ElasticOptions options)
+        public ElasticUserStore(IElasticClient elasticClient, ElasticUserStoreOptions options)
         {
 
             if (elasticClient == null)
@@ -222,7 +222,7 @@ namespace AspNetCore.Identity.Elastic
 
         protected IElasticClient ElasticClient { get; }
 
-        public ElasticOptions Options { get; set; }
+        public ElasticUserStoreOptions Options { get; set; }
 
         public IQueryable<TUser> Users
         {
