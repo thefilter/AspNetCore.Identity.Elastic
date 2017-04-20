@@ -20,6 +20,8 @@ namespace AspNetCore.Identity.Elastic
             settings.MapDefaultTypeIndices(m => m
                 .Add(typeof(ElasticIdentityUser), defaultIndex));
 
+            settings.BasicAuthentication("elastic","changeme");
+
             var transport = new Transport<IConnectionSettingsValues>(settings);
             
             return new ElasticClient(settings);

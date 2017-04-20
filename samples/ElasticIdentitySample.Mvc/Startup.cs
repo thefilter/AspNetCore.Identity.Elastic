@@ -44,6 +44,10 @@ namespace ElasticIdentitySample.Mvc
 
             var node = new Uri("http://" + elasticSettings.ServerName.Replace("http://", ""));
             var settings = new ConnectionSettings(node);
+            if (!string.IsNullOrEmpty(elasticSettings.UserName) || !string.IsNullOrEmpty(elasticSettings.Password))
+            {
+                settings.BasicAuthentication(elasticSettings.UserName, elasticSettings.Password);
+            }
             settings.MapDefaultTypeIndices(m => m
                 .Add(typeof(ElasticIdentityUser), "users"));
             var elasticClient = new ElasticClient(settings);
