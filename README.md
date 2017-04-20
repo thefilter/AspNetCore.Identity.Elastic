@@ -20,15 +20,12 @@ This library supports [`netstandard1.4`](https://docs.microsoft.com/en-us/dotnet
 ### Tests
 
 In order to run the tests, Elasticsearch must be running on `127.0.0.1:9200`.
-The Docker image can be retrieved with the following command:
-```bash
-docker pull docker.elastic.co/elasticsearch/elasticsearch:5.2.2
-```
 
-To start Elasticsearch use the following command:
+To start Elasticsearch (and Kibana) via docker use the following command in the docker sub-directory:
 ```bash
-docker run -p 9200:9200 -e "http.host=0.0.0.0" -e "transport.host=127.0.0.1" -e "xpack.security.enabled=false" docker.elastic.co/elasticsearch/elasticsearch:5.2.2
+docker-compose up -d
 ```
+The Elastic and Kibana versions can be modified in the .env file, but default to 5.3.0.
 
 The simplest way to run the tests is with the following command:
 ```bash
