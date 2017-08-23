@@ -25,7 +25,7 @@ To start Elasticsearch (and Kibana) via docker use the following command in the 
 ```bash
 docker-compose up -d
 ```
-The Elastic and Kibana versions can be modified in the .env file, but default to 5.3.0.
+The Elastic and Kibana versions can be modified in the .env file, but default to 5.5.2.
 
 The simplest way to run the tests is with the following command:
 ```bash
