@@ -4,11 +4,6 @@
 
 [Elasticsearch](https://www.elastic.co/products/elasticsearch) data store adaptor for [ASP.NET Core Identity](https://github.com/aspnet/Identity).
 
-**ATTENTION:**
-
-This project is still in alpha stage.
-
-
 ## Building and developing
 
 Either install Visual Studio 2017 which comes with the latest SDK or on Mac or Linux follow the Microsoft's [instructions](https://www.microsoft.com/net/core) on how to download and install the .NET SDK 1.1.
