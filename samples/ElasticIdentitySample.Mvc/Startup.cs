@@ -17,24 +17,12 @@ namespace ElasticIdentitySample.Mvc
 {
     public class Startup
     {
-        public Startup(IHostingEnvironment env)
+        public Startup(IConfiguration configuration)
         {
-            var builder = new ConfigurationBuilder()
-                .SetBasePath(env.ContentRootPath)
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true);
-
-            if (env.IsDevelopment())
-            {
-                // For more details on using the user secret store see https://go.microsoft.com/fwlink/?LinkID=532709
-                builder.AddUserSecrets<Startup>();
-            }
-
-            builder.AddEnvironmentVariables();
-            Configuration = builder.Build();
+            Configuration = configuration;
         }
 
-        public IConfigurationRoot Configuration { get; }
+        public IConfiguration Configuration { get; }
 
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
@@ -51,27 +39,27 @@ namespace ElasticIdentitySample.Mvc
             settings.MapDefaultTypeIndices(m => m
                 .Add(typeof(ElasticIdentityUser), "users"));
             var elasticClient = new ElasticClient(settings);
-
-            services.AddElasticIdentity(elasticClient);
-
-            // Services used by identity
+            
+            services.AddIdentity<ElasticIdentityUser, ElasticIdentityUserRole>()
+                .AddElasticIdentity(elasticClient)
+                .AddDefaultTokenProviders();
+            
             services.AddAuthentication(options =>
             {
-                // This is the Default value for ExternalCookieAuthenticationScheme
-                options.SignInScheme = new IdentityCookieOptions().ExternalCookieAuthenticationScheme;
+                options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
             });
-
+            
             // Hosting doesn't add IHttpContextAccessor by default
             services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
 
             services.AddOptions();
             services.AddDataProtection();
 
-            services.AddMvc();
-
             // Add application services.
             services.AddTransient<IEmailSender, AuthMessageSender>();
             services.AddTransient<ISmsSender, AuthMessageSender>();
+            
+            services.AddMvc();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -90,9 +78,10 @@ namespace ElasticIdentitySample.Mvc
                 app.UseExceptionHandler("/Home/Error");
             }
 
-            app.UseIdentity();
-
             app.UseStaticFiles();
+            
+            app.UseAuthentication();
+
 
             // Add external authentication middleware below. To configure them please see https://go.microsoft.com/fwlink/?LinkID=532715
 

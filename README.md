@@ -6,11 +6,11 @@
 
 ## Building and developing
 
-Either install Visual Studio 2017 which comes with the latest SDK or on Mac or Linux follow the Microsoft's [instructions](https://www.microsoft.com/net/core) on how to download and install the .NET SDK 1.1.
+Either install Visual Studio 2017 which comes with the latest SDK or on Mac or Linux follow the Microsoft's [instructions](https://www.microsoft.com/net/core) on how to download and install the .NET SDK 2.0.
 
 ## Usage
 
-This library supports [`netstandard1.4`](https://docs.microsoft.com/en-us/dotnet/articles/standard/library) and above.
+This library supports [`netstandard2.0`](https://docs.microsoft.com/en-us/dotnet/articles/standard/library) and above.
 
 ### Tests
 

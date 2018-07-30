@@ -8,41 +8,39 @@ namespace AspNetCore.Identity.Elastic.Extensions
 {
     public static class ServiceExtensions
     {
-        private const string DEFAULT_INDEX_NAME = "users";        
+        private const string DEFAULT_INDEX_NAME = "users";
 
         /// <summary>
-        /// Registers singleton <see cref="ElasticUserStore"/> component for 
-        /// <see cref="IUserStore{ElasticIdentityUser}"/> with the parameters supplied by the provided 
-        /// <see cref="ElasticUserStoreOptions"/>, and registers dependencies for that component which have not already been 
+        /// Configures the identity builder with ElasticIdentity components,
+        /// and registers dependencies for that component which have not already been 
         /// registered.
         /// </summary>
         /// <param name="elasticClient">
         /// The <see cref="IElasticClient"/> which will be used by the <see cref="ElasticUserStore"/>.
         /// </param>
-        public static void AddElasticIdentity(
-            this IServiceCollection services, 
+        public static IdentityBuilder AddElasticIdentity(this IdentityBuilder identityBuilder, 
             IElasticClient elasticClient)
         {
-            services.TryAddSingleton<IElasticClient>(elasticClient);
+            identityBuilder.AddUserStore<ElasticUserStore<string, ElasticIdentityUser>>();
+            identityBuilder.AddRoleStore<ElasticIdentityUserRole>();
+            identityBuilder.AddUserValidator<UserValidator<ElasticIdentityUser>>();
+            identityBuilder.AddPasswordValidator<PasswordValidator<ElasticIdentityUser>>();
+            identityBuilder.AddSignInManager<SignInManager<ElasticIdentityUser>>();
+            identityBuilder.AddUserManager<UserManager<ElasticIdentityUser>>();
+            identityBuilder.AddClaimsPrincipalFactory<UserClaimsPrincipalFactory<ElasticIdentityUser>>();
+            identityBuilder.AddErrorDescriber<IdentityErrorDescriber>();
 
-            services.AddSingleton<IUserStore<ElasticIdentityUser>, ElasticUserStore>();
-
-            services.TryAddSingleton<IdentityMarkerService>();
-            services.TryAddSingleton<IUserValidator<ElasticIdentityUser>, UserValidator<ElasticIdentityUser>>();
-            services.TryAddSingleton<IPasswordValidator<ElasticIdentityUser>, PasswordValidator<ElasticIdentityUser>>();
-            services.TryAddSingleton<IPasswordHasher<ElasticIdentityUser>, PasswordHasher<ElasticIdentityUser>>();
-            services.TryAddSingleton<ILookupNormalizer, LowerInvariantLookupNormalizer>();
-            services.TryAddSingleton<IdentityErrorDescriber>();
-            services.TryAddSingleton<ISecurityStampValidator, SecurityStampValidator<ElasticIdentityUser>>();
-            services.TryAddSingleton<IUserClaimsPrincipalFactory<ElasticIdentityUser>, UserClaimsPrincipalFactory<ElasticIdentityUser>>();
-            services.TryAddSingleton<UserManager<ElasticIdentityUser>, UserManager<ElasticIdentityUser>>();
-            services.TryAddScoped<SignInManager<ElasticIdentityUser>, SignInManager<ElasticIdentityUser>>();
+            identityBuilder.Services.TryAddSingleton<IElasticClient>(elasticClient);
+            identityBuilder.Services.TryAddSingleton<IPasswordHasher<ElasticIdentityUser>, PasswordHasher<ElasticIdentityUser>>();
+            identityBuilder.Services.TryAddSingleton<ILookupNormalizer, LowerInvariantLookupNormalizer>();
+            identityBuilder.Services.TryAddSingleton<ISecurityStampValidator, SecurityStampValidator<ElasticIdentityUser>>();
+        
+            return identityBuilder;
         }
 
         /// <summary>
-        /// Registers singleton <see cref="ElasticUserStore"/> component for 
-        /// <see cref="IUserStore{ElasticIdentityUser}"/> with the parameters supplied by the provided 
-        /// <see cref="ElasticUserStoreOptions"/>, and registers dependencies for that component which have not already been 
+        /// Configures the identity builder with ElasticIdentity components,
+        /// and registers dependencies for that component which have not already been 
         /// registered.
         /// </summary>
         /// <param name="serverName">
@@ -51,16 +49,16 @@ namespace AspNetCore.Identity.Elastic.Extensions
         /// <param name="indexName">
         /// The index which will contain the user information.
         /// </param>
-        public static void AddElasticIdentity(
-            this IServiceCollection services, 
-            string serverName, 
+        public static IdentityBuilder AddElasticIdentity(
+            this IdentityBuilder identityBuilder,
+            string serverName,
             string indexName = DEFAULT_INDEX_NAME)
         {
-            var node = new Uri("http://" + serverName.Replace("http://", ""));            
+            var node = new Uri("http://" + serverName.Replace("http://", ""));
 
             IElasticClient elasticClient = ElasticClientFactory.Create(node, indexName);
-            
-            AddElasticIdentity(services, elasticClient);
+
+            return AddElasticIdentity(identityBuilder, elasticClient);
         }
     }
 }

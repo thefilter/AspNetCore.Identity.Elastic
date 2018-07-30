@@ -5,9 +5,7 @@ using AspNetCore.Identity.Elastic;
 using ElasticIdentitySample.Mvc.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authorization;
 
@@ -18,7 +16,6 @@ namespace ElasticIdentitySample.Mvc.Controllers
     {
         private readonly UserManager<ElasticIdentityUser> _userManager;
         private readonly SignInManager<ElasticIdentityUser> _signInManager;
-        private readonly IOptions<IdentityCookieOptions> _identityCookieOptions;
         private readonly IEmailSender _emailSender;
         private readonly ISmsSender _smsSender;
         private readonly ILoggerFactory _loggerFactory;
@@ -26,7 +23,6 @@ namespace ElasticIdentitySample.Mvc.Controllers
         public UsersController(
             UserManager<ElasticIdentityUser> userManager,
             SignInManager<ElasticIdentityUser> signInManager,
-            IOptions<IdentityCookieOptions> identityCookieOptions,
             IEmailSender emailSender,
             ISmsSender smsSender,
             ILoggerFactory loggerFactory
@@ -34,7 +30,6 @@ namespace ElasticIdentitySample.Mvc.Controllers
         {
             _userManager = userManager;
             _signInManager = signInManager;
-            _identityCookieOptions = identityCookieOptions;
             _emailSender = emailSender;
             _smsSender = smsSender;
             _loggerFactory = loggerFactory;
